@@ -45,9 +45,12 @@ public class PostgresSchema {
     }
 
     public static class PostgresColumn extends AbstractTableColumn<PostgresTable, PostgresDataType> {
-
+        // TODO: variable to check if distribution column - is this necessary?
+        // public final boolean isDistributionColumn;
         public PostgresColumn(String name, PostgresDataType columnType) {
             super(name, null, columnType);
+            // TODO: variable to check if distribution column - is this necessary?
+            // this.isDistributionColumn = isDistributionColumn;
         }
 
     }
@@ -198,6 +201,8 @@ public class PostgresSchema {
         private final TableType tableType;
         private final List<PostgresStatisticsObject> statistics;
         private final boolean isInsertable;
+        // TODO: variable to check if distributed - is this necessary?
+        // private boolean isDistributed;
 
         public PostgresTable(String tableName, List<PostgresColumn> columns, List<PostgresIndex> indexes,
                 TableType tableType, List<PostgresStatisticsObject> statistics, boolean isView, boolean isInsertable) {
@@ -205,6 +210,8 @@ public class PostgresSchema {
             this.statistics = statistics;
             this.isInsertable = isInsertable;
             this.tableType = tableType;
+            // TODO: variable to check if distributed - is this necessary?
+            // this.isDistributed = isDistributed;
         }
 
         public List<PostgresStatisticsObject> getStatistics() {
@@ -260,6 +267,8 @@ public class PostgresSchema {
             List<PostgresTable> databaseTables = new ArrayList<>();
             try (Statement s = con.createStatement()) {
                 try (ResultSet rs = s.executeQuery(
+                        // TODO: check if distributed - is this necessary?
+                        // pg_dist_partition - left join
                         "SELECT table_name, table_schema, table_type, is_insertable_into FROM information_schema.tables WHERE table_schema='public' OR table_schema LIKE 'pg_temp_%';")) {
                     while (rs.next()) {
                         String tableName = rs.getString("table_name");
@@ -267,6 +276,8 @@ public class PostgresSchema {
                         boolean isInsertable = rs.getBoolean("is_insertable_into");
                         // TODO: also check insertable
                         // TODO: insert into view?
+                        // TODO: variable isDistributed
+                        // boolean isDistributed = rs.getBoolean("is_distributed");
                         boolean isView = tableName.startsWith("v"); // tableTypeStr.contains("VIEW") ||
                                                                     // tableTypeStr.contains("LOCAL TEMPORARY") &&
                                                                     // !isInsertable;

@@ -188,6 +188,11 @@ public final class PostgresProvider extends ProviderAdapter<PostgresGlobalState,
                 Query createTable = PostgresTableGenerator.generate(tableName, globalState.getSchema(),
                         generateOnlyKnown, globalState);
                 globalState.executeStatement(createTable);
+		// TODO: distribute tables
+		// 80% distributed, 10% local, 10% reference
+		// query that outputs fields (+ filter by primary key
+		// random pick from any eligible distribution column
+		// sql query to distirbute it + add to log
             } catch (IgnoreMeException e) {
 
             }
@@ -199,6 +204,16 @@ public final class PostgresProvider extends ProviderAdapter<PostgresGlobalState,
                         throw new IgnoreMeException();
                     }
                 });
+        // TODO: transactions broke during refactoring
+        // catch (Throwable t) {
+        // if (t.getMessage().contains("current transaction is aborted")) {
+        // manager.execute(new QueryAdapter("ABORT"));
+        // globalState.setSchema(PostgresSchema.fromConnection(con, databaseName));
+        // } else {
+        // System.err.println(query.getQueryString());
+        // throw t;
+        // }
+        // }
         se.executeStatements();
         globalState.executeStatement(new QueryAdapter("COMMIT", true));
         globalState.executeStatement(new QueryAdapter("SET SESSION statement_timeout = 5000;\n"));
@@ -219,6 +234,13 @@ public final class PostgresProvider extends ProviderAdapter<PostgresGlobalState,
     @Override
     public Connection createDatabase(PostgresGlobalState globalState) throws SQLException {
         String url = "jdbc:postgresql://localhost:5432/test";
+        // TODO: make database creation citus-compatible
+        // connect to 9700/postgres (make this optional argument)
+        // get worker nodes from this database
+        // add citus extension to these nodes
+        // after each database added to coordinator node, add those databases to worker nodes as well (from existing database)
+        // switch to new database, add workers to coordinator node
+        // user: sqlancer? hardcode v-naugur for now, make user optional too
         String databaseName = globalState.getDatabaseName();
         Connection con = DriverManager.getConnection(url, globalState.getOptions().getUserName(),
                 globalState.getOptions().getPassword());
@@ -236,6 +258,17 @@ public final class PostgresProvider extends ProviderAdapter<PostgresGlobalState,
         con.close();
         con = DriverManager.getConnection("jdbc:postgresql://localhost:5432/" + databaseName,
                 globalState.getOptions().getUserName(), globalState.getOptions().getPassword());
+        List<String> statements = Arrays.asList(
+                // "CREATE EXTENSION IF NOT EXISTS btree_gin;",
+                // "CREATE EXTENSION IF NOT EXISTS btree_gist;", // TODO: undefined symbol: elog_start
+                "CREATE EXTENSION IF NOT EXISTS pg_prewarm;", "SET max_parallel_workers_per_gather=16");
+        for (String s : statements) {
+            QueryAdapter query = new QueryAdapter(s);
+            globalState.getState().statements.add(query);
+            query.execute(con);
+        }
+        // new QueryAdapter("set jit_above_cost = 0; set jit_inline_above_cost = 0; set jit_optimize_above_cost =
+        // 0;").execute(con);
         return con;
     }
 

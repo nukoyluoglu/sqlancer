@@ -20,7 +20,7 @@ public final class Randomly {
     private Supplier<String> provider;
 
     private static final ThreadLocal<Random> THREAD_RANDOM = new ThreadLocal<>();
-
+    // TODO: understand why cache?
     private void addToCache(long val) {
         if (USE_CACHING && cachedLongs.size() < CACHE_SIZE && !cachedLongs.contains(val)) {
             cachedLongs.add(val);
