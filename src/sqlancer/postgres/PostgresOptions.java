@@ -29,6 +29,12 @@ public class PostgresOptions {
     @Parameter(names = "--test-collations", arity = 1)
     public boolean testCollations = true;
 
+    @Parameter(names = "--port")
+    public int coordinatorPort = 9700;
+
+    @Parameter(names = "--database")
+    public String entryDatabaseName = "postgres";
+
     public enum PostgresOracle {
         NOREC {
             @Override
@@ -66,3 +72,4 @@ public class PostgresOptions {
     }
 
 }
+                     
