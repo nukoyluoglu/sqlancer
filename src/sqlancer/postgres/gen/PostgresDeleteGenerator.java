@@ -35,8 +35,13 @@ public final class PostgresDeleteGenerator {
         }
         if (Randomly.getBoolean()) {
             sb.append(" RETURNING ");
+            // non-IMMUTABLE functions cannot be used in RETURNING clauses on distributed tables
+            globalState.setAllowStableFunction(false);
+            globalState.setAllowVolatileFunction(false);
             sb.append(PostgresVisitor
                     .asString(PostgresExpressionGenerator.generateExpression(globalState, table.getColumns())));
+            globalState.setAllowStableFunction(true);
+            globalState.setAllowVolatileFunction(true);
         }
         PostgresCommon.addCommonExpressionErrors(errors);
         errors.add("out of range");

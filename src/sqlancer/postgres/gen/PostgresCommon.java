@@ -264,7 +264,13 @@ public final class PostgresCommon {
 
     private static void addTableConstraint(StringBuilder sb, PostgresTable table, PostgresGlobalState globalState,
             TableConstraints t, Set<String> errors) {
-        List<PostgresColumn> randomNonEmptyColumnSubset = table.getRandomNonEmptyColumnSubset();
+        List<PostgresColumn> randomNonEmptyColumnSubset = new ArrayList<>();
+        // CONSTRAINT must be added on partition column for distributed table
+        if (table.getDistributionColumn() != null) {
+            randomNonEmptyColumnSubset.add(table.getDistributionColumn());
+        } else {
+            randomNonEmptyColumnSubset = table.getRandomNonEmptyColumnSubset();
+        }
         List<PostgresColumn> otherColumns;
         PostgresCommon.addCommonExpressionErrors(errors);
         switch (t) {

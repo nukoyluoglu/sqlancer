@@ -65,6 +65,8 @@ public class PostgresTableGenerator {
     private Query generate() {
         columnCanHavePrimaryKey = true;
         sb.append("CREATE");
+        // TODO: fix temp issue
+        /*
         if (Randomly.getBoolean()) {
             sb.append(" ");
             isTemporaryTable = true;
@@ -72,6 +74,7 @@ public class PostgresTableGenerator {
         } else if (Randomly.getBoolean()) {
             sb.append(" UNLOGGED");
         }
+        */
         sb.append(" TABLE");
         if (Randomly.getBoolean()) {
             sb.append(" IF NOT EXISTS");

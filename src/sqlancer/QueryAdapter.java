@@ -1,10 +1,13 @@
 package sqlancer;
 
+import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
 
 public class QueryAdapter extends Query {
 
@@ -115,6 +118,48 @@ public class QueryAdapter extends Query {
     @Override
     public Collection<String> getExpectedErrors() {
         return expectedErrors;
+    }
+
+    public boolean fillAndExecute(Connection con, String template, List<String> fills) throws SQLException {
+        try (PreparedStatement s = con.prepareStatement(template)) {
+            for (int i = 1; i < fills.size() + 1; i++) {
+                s.setString(i, fills.get(i - 1));
+            }
+            s.execute(query);
+            Main.nrSuccessfulActions.addAndGet(1);
+            return true;
+        } catch (Exception e) {
+            Main.nrUnsuccessfulActions.addAndGet(1);
+            checkException(e);
+            return false;
+        }
+    }
+
+    public ResultSet fillAndExecuteAndGet(Connection con, String template, List<String> fills) throws SQLException {
+        ResultSet result = null;
+        PreparedStatement s = con.prepareStatement(template);
+        try {
+            for (int i = 1; i < fills.size(); i++) {
+                s.setString(i, fills.get(i));
+            }
+            result = s.executeQuery(query);
+            Main.nrSuccessfulActions.addAndGet(1);
+            return result;
+        } catch (Exception e) {
+            s.close();
+            boolean isExcluded = false;
+            Main.nrUnsuccessfulActions.addAndGet(1);
+            for (String expectedError : expectedErrors) {
+                if (e.getMessage().contains(expectedError)) {
+                    isExcluded = true;
+                    break;
+                }
+            }
+            if (!isExcluded) {
+                    throw e;
+            }
+        }
+        return null;
     }
 
 }

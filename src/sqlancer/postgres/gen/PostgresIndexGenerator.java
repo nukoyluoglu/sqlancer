@@ -60,7 +60,10 @@ public final class PostgresIndexGenerator {
         }
 
         sb.append("(");
-        if (method == IndexType.HASH) {
+        // UNIQUE INDEX must be created on partition column if table is distributed
+        if (randomTable.getDistributionColumn() != null) {
+            sb.append(randomTable.getDistributionColumn().getName());
+        } else if (method == IndexType.HASH) {
             sb.append(randomTable.getRandomColumn().getName());
         } else {
             for (int i = 0; i < Randomly.smallNumber() + 1; i++) {

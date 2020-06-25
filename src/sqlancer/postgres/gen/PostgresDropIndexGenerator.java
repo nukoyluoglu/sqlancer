@@ -9,6 +9,7 @@ import sqlancer.Randomly;
 import sqlancer.postgres.PostgresGlobalState;
 import sqlancer.postgres.PostgresSchema.PostgresIndex;
 import sqlancer.sqlite3.gen.SQLite3Common;
+import sqlancer.postgres.PostgresSchema.PostgresTable;
 
 public final class PostgresDropIndexGenerator {
 
@@ -16,12 +17,17 @@ public final class PostgresDropIndexGenerator {
     }
 
     public static Query create(PostgresGlobalState globalState) {
-        List<PostgresIndex> indexes = globalState.getSchema().getRandomTable().getIndexes();
+        PostgresTable randomTable = globalState.getSchema().getRandomTable();
+        List<PostgresIndex> indexes = randomTable.getIndexes();
         StringBuilder sb = new StringBuilder();
         sb.append("DROP INDEX ");
+        int numberofIndicesToDrop = Randomly.smallNumber() + 1;
+        if (randomTable.getDistributionColumn() != null) {
+            numberofIndicesToDrop = 1;
+        }
         if (Randomly.getBoolean() || indexes.isEmpty()) {
             sb.append("IF EXISTS ");
-            for (int i = 0; i < Randomly.smallNumber() + 1; i++) {
+            for (int i = 0; i < numberofIndicesToDrop; i++) {
                 if (i != 0) {
                     sb.append(", ");
                 }
@@ -32,7 +38,7 @@ public final class PostgresDropIndexGenerator {
                 }
             }
         } else {
-            for (int i = 0; i < Randomly.smallNumber() + 1; i++) {
+            for (int i = 0; i < numberofIndicesToDrop; i++) {
                 if (i != 0) {
                     sb.append(", ");
                 }
