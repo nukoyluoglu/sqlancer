@@ -125,7 +125,7 @@ public class QueryAdapter extends Query {
             for (int i = 1; i < fills.size() + 1; i++) {
                 s.setString(i, fills.get(i - 1));
             }
-            s.execute(query);
+            s.execute();
             Main.nrSuccessfulActions.addAndGet(1);
             return true;
         } catch (Exception e) {
@@ -139,10 +139,10 @@ public class QueryAdapter extends Query {
         ResultSet result = null;
         PreparedStatement s = con.prepareStatement(template);
         try {
-            for (int i = 1; i < fills.size(); i++) {
-                s.setString(i, fills.get(i));
+            for (int i = 1; i < fills.size() + 1; i++) {
+                s.setString(i, fills.get(i - 1));
             }
-            result = s.executeQuery(query);
+            result = s.executeQuery();
             Main.nrSuccessfulActions.addAndGet(1);
             return result;
         } catch (Exception e) {

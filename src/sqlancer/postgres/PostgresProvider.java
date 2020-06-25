@@ -212,7 +212,11 @@ public final class PostgresProvider extends ProviderAdapter<PostgresGlobalState,
             PostgresColumn columnToDistribute = Randomly.fromList(columns);
             QueryAdapter query = new QueryAdapter("SELECT create_distributed_table('" + tableName + "', '" + columnToDistribute.getName() + "');");
             globalState.getState().statements.add(query);
-            query.execute(con);
+            String template = "SELECT create_distributed_table(?, ?);";
+            List<String> fills = new ArrayList<>();
+            fills.add(tableName);
+            fills.add(columnToDistribute.getName());
+            query.fillAndExecute(con, template, fills);
             // TODO: check sql injection
         }
     }
@@ -222,7 +226,10 @@ public final class PostgresProvider extends ProviderAdapter<PostgresGlobalState,
         QueryAdapter query = new QueryAdapter("SELECT constraint_type FROM information_schema.table_constraints WHERE table_name = '" + tableName + "' AND (constraint_type = 'PRIMARY KEY' OR constraint_type = 'UNIQUE' or constraint_type = 'EXCLUDE');");
         // TODO: decide whether to log
         // globalState.getState().statements.add(query);
-        ResultSet rs = query.executeAndGet(con);
+        String template = "SELECT constraint_type FROM information_schema.table_constraints WHERE table_name = ? AND (constraint_type = 'PRIMARY KEY' OR constraint_type = 'UNIQUE' or constraint_type = 'EXCLUDE');";
+        List<String> fills = new ArrayList<>();
+        fills.add(tableName);
+        ResultSet rs = query.fillAndExecuteAndGet(con, template, fills);
         while (rs.next()) {
             constraints.add(rs.getString("constraint_type"));
         }
@@ -237,7 +244,10 @@ public final class PostgresProvider extends ProviderAdapter<PostgresGlobalState,
             QueryAdapter query = new QueryAdapter("SELECT column_name, data_type FROM information_schema.columns WHERE table_name = '" + tableName + "';");
             // TODO: decide whether to log
             // globalState.getState().statements.add(query);
-            ResultSet rs = query.executeAndGet(con);
+            String template = "SELECT column_name, data_type FROM information_schema.columns WHERE table_name = ?;";
+            List<String> fills = new ArrayList<>();
+            fills.add(tableName);
+            ResultSet rs = query.fillAndExecuteAndGet(con, template, fills);
             while (rs.next()) {
                 String columnName = rs.getString("column_name");
                 String dataType = rs.getString("data_type");
@@ -250,7 +260,10 @@ public final class PostgresProvider extends ProviderAdapter<PostgresGlobalState,
             QueryAdapter query = new QueryAdapter("SELECT c.column_name, c.data_type, tc.constraint_type FROM information_schema.table_constraints tc JOIN information_schema.constraint_column_usage AS ccu USING (constraint_schema, constraint_name) JOIN information_schema.columns AS c ON c.table_schema = tc.constraint_schema AND tc.table_name = c.table_name AND ccu.column_name = c.column_name WHERE (constraint_type = 'PRIMARY KEY' OR constraint_type = 'UNIQUE' OR constraint_type = 'EXCLUDE') AND c.table_name = '" + tableName + "';");
             // TODO: decide whether to log
             // globalState.getState().statements.add(query);
-            ResultSet rs = query.executeAndGet(con);
+            String template = "SELECT c.column_name, c.data_type, tc.constraint_type FROM information_schema.table_constraints tc JOIN information_schema.constraint_column_usage AS ccu USING (constraint_schema, constraint_name) JOIN information_schema.columns AS c ON c.table_schema = tc.constraint_schema AND tc.table_name = c.table_name AND ccu.column_name = c.column_name WHERE (constraint_type = 'PRIMARY KEY' OR constraint_type = 'UNIQUE' OR constraint_type = 'EXCLUDE') AND c.table_name = ?;";
+            List<String> fills = new ArrayList<>();
+            fills.add(tableName);
+            ResultSet rs = query.fillAndExecuteAndGet(con, template, fills);
             while (rs.next()) {
                 String columnName = rs.getString("column_name");
                 String dataType = rs.getString("data_type");
@@ -318,7 +331,10 @@ public final class PostgresProvider extends ProviderAdapter<PostgresGlobalState,
                 // create reference table
                 query = new QueryAdapter("SELECT create_reference_table('" + table.getName() + "');");
                 globalState.getState().statements.add(query);
-                query.execute(con);
+                String template = "SELECT create_reference_table(?);";
+                List<String> fills = new ArrayList<>();
+                fills.add(table.getName());
+                query.fillAndExecute(con, template, fills);
             } else {
                 // create distributed table
                 createDistributedTable(table.getName(), globalState, con);
@@ -433,7 +449,9 @@ public final class PostgresProvider extends ProviderAdapter<PostgresGlobalState,
             }
             // add all servers hosting worker nodes as worker nodes to coordinator node for database with given databaseName
             for (WorkerNode w : workerNodes) {
+                // TODO: protect from sql injection - is it necessary though since these are read from the system?
                 globalState.getState().statements.add(new QueryAdapter("SELECT * from master_add_node('" + w.get_name() + "', " + w.get_port() + ");"));
+                String template = "SELECT * from master_add_node('" + w.get_name() + "', " + w.get_port() + ");";
                 try (Statement s = con.createStatement()) {
                     s.execute("SELECT * from master_add_node('" + w.get_name() + "', " + w.get_port() + ");");
                 }
