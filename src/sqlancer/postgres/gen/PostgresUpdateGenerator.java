@@ -5,6 +5,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+import sqlancer.IgnoreMeException;
 import sqlancer.Query;
 import sqlancer.QueryAdapter;
 import sqlancer.Randomly;
@@ -37,6 +38,22 @@ public final class PostgresUpdateGenerator {
         List<PostgresColumn> columns = randomTable.getRandomNonEmptyColumnSubset();
         PostgresCommon.addCommonInsertUpdateErrors(errors);
 
+        // UPDATE must not include partition column if table is distributed
+        if (randomTable.getDistributionColumn() != null) {
+            int toRemove = -1;
+            for (int i = 0; i < columns.size(); i++) {
+                PostgresColumn c = columns.get(i);
+                if ((c.getName()).equals(randomTable.getDistributionColumn().getName())) {
+                    toRemove = i;
+                }
+            }
+            if (toRemove != -1) {
+                columns.remove(toRemove);
+            }
+        }
+        if (columns.isEmpty()) {
+            throw new IgnoreMeException();
+        }
         for (int i = 0; i < columns.size(); i++) {
             if (i != 0) {
                 sb.append(", ");
@@ -67,8 +84,11 @@ public final class PostgresUpdateGenerator {
         PostgresCommon.addCommonExpressionErrors(errors);
         if (!Randomly.getBooleanWithSmallProbability()) {
             sb.append(" WHERE ");
+            // VOLATILE funcitons cannot be used in WHERE clauses on distributed tables
+            globalState.setAllowVolatileFunction(false);
             PostgresExpression where = PostgresExpressionGenerator.generateExpression(globalState,
                     randomTable.getColumns(), PostgresDataType.BOOLEAN);
+            globalState.setAllowVolatileFunction(true);
             sb.append(PostgresVisitor.asString(where));
         }
 

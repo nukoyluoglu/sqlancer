@@ -41,6 +41,21 @@ public final class PostgresInsertGenerator {
         sb.append(table.getName());
         List<PostgresColumn> columns = table.getRandomNonEmptyColumnSubset();
         sb.append("(");
+        // INSERT must include partition column if table is distributed
+        if (table.getDistributionColumn() != null) {
+            PostgresColumn distributionColumn = table.getDistributionColumn();
+            boolean distributionColumnIncluded = false;
+            for (PostgresColumn c : columns) {
+                distributionColumnIncluded = distributionColumnIncluded || c.getName().equals(distributionColumn.getName());
+            }
+            if (! distributionColumnIncluded) {
+                for (PostgresColumn c : table.getColumns()) {
+                    if (c.getName().equals(distributionColumn.getName())) {
+                        columns.add(c);
+                    }
+                }
+            }
+        }
         sb.append(columns.stream().map(c -> c.getName()).collect(Collectors.joining(", ")));
         sb.append(")");
         if (Randomly.getBooleanWithRatherLowProbability()) {
@@ -58,8 +73,16 @@ public final class PostgresInsertGenerator {
                 if (i != 0) {
                     sbRowValue.append(", ");
                 }
-                sbRowValue.append(PostgresVisitor.asString(PostgresExpressionGenerator
-                        .generateConstant(globalState.getRandomly(), columns.get(i).getType())));
+                String valueToInsert = PostgresVisitor.asString(PostgresExpressionGenerator
+                .generateConstant(globalState.getRandomly(), columns.get(i).getType()));
+                if (columns.get(i).getName().equals(table.getDistributionColumn().getName())) {
+                    // INSERT cannot be performed with NULL in the partition column on a distributed table
+                    do {
+                        valueToInsert = PostgresVisitor.asString(PostgresExpressionGenerator
+                .generateConstant(globalState.getRandomly(), columns.get(i).getType()));
+                    } while (valueToInsert.contains("NULL"));
+                }
+                sbRowValue.append(valueToInsert);
             }
             sbRowValue.append(")");
 

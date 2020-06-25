@@ -45,6 +45,7 @@ public class PostgresSchema {
     }
 
     public static class PostgresColumn extends AbstractTableColumn<PostgresTable, PostgresDataType> {
+
         public PostgresColumn(String name, PostgresDataType columnType) {
             super(name, null, columnType);
         }
@@ -102,7 +103,8 @@ public class PostgresSchema {
 
     }
 
-    private static PostgresDataType getColumnType(String typeString) {
+    // FYI: made public for use in PostgresProvider
+    public static PostgresDataType getColumnType(String typeString) {
         switch (typeString) {
         case "smallint":
         case "integer":
@@ -197,6 +199,7 @@ public class PostgresSchema {
         private final TableType tableType;
         private final List<PostgresStatisticsObject> statistics;
         private final boolean isInsertable;
+        private PostgresColumn distributionColumn = null;
 
         public PostgresTable(String tableName, List<PostgresColumn> columns, List<PostgresIndex> indexes,
                 TableType tableType, List<PostgresStatisticsObject> statistics, boolean isView, boolean isInsertable) {
@@ -216,6 +219,14 @@ public class PostgresSchema {
 
         public boolean isInsertable() {
             return isInsertable;
+        }
+
+        public void setDistributionColumn(String distributionColumnName) {
+            this.distributionColumn = new PostgresColumn(distributionColumnName, null);
+        }
+
+        public PostgresColumn getDistributionColumn() {
+            return this.distributionColumn;
         }
 
     }
@@ -259,11 +270,12 @@ public class PostgresSchema {
             List<PostgresTable> databaseTables = new ArrayList<>();
             try (Statement s = con.createStatement()) {
                 try (ResultSet rs = s.executeQuery(
-                        "SELECT table_name, table_schema, table_type, is_insertable_into FROM information_schema.tables WHERE table_schema='public' OR table_schema LIKE 'pg_temp_%';")) {
+                        "SELECT table_name, table_schema, table_type, is_insertable_into, column_to_column_name(logicalrelid, partkey) AS dist_col_name FROM information_schema.tables LEFT OUTER JOIN pg_dist_partition ON logicalrelid=table_name::regclass WHERE table_schema='public' OR table_schema LIKE 'pg_temp_%';")) {
                     while (rs.next()) {
                         String tableName = rs.getString("table_name");
                         String tableTypeSchema = rs.getString("table_schema");
                         boolean isInsertable = rs.getBoolean("is_insertable_into");
+                        String distributionColumn = rs.getString("dist_col_name");
                         // TODO: also check insertable
                         // TODO: insert into view?
                         boolean isView = tableName.startsWith("v"); // tableTypeStr.contains("VIEW") ||
@@ -275,6 +287,9 @@ public class PostgresSchema {
                         List<PostgresStatisticsObject> statistics = getStatistics(con);
                         PostgresTable t = new PostgresTable(tableName, databaseColumns, indexes, tableType, statistics,
                                 isView, isInsertable);
+                        if (distributionColumn != null && !distributionColumn.equals("")) {
+                            t.setDistributionColumn(distributionColumn);
+                        }
                         for (PostgresColumn c : databaseColumns) {
                             c.setTable(t);
                         }

@@ -1,6 +1,7 @@
 package sqlancer.postgres.gen;
 
 import java.util.HashSet;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
@@ -27,6 +28,7 @@ public class PostgresAlterTableGenerator {
         // ALTER_TABLE_ADD_COLUMN, // [ COLUMN ] column data_type [ COLLATE collation ] [
         // column_constraint [ ... ] ]
         ALTER_TABLE_DROP_COLUMN, // DROP [ COLUMN ] [ IF EXISTS ] column [ RESTRICT | CASCADE ]
+        /* not supported by citus
         ALTER_COLUMN_TYPE, // ALTER [ COLUMN ] column [ SET DATA ] TYPE data_type [ COLLATE collation ] [
                            // USING expression ]
         ALTER_COLUMN_SET_DROP_DEFAULT, // ALTER [ COLUMN ] column SET DEFAULT expression and ALTER [ COLUMN ] column
@@ -35,10 +37,11 @@ public class PostgresAlterTableGenerator {
         ALTER_COLUMN_SET_STATISTICS, // ALTER [ COLUMN ] column SET STATISTICS integer
         ALTER_COLUMN_SET_ATTRIBUTE_OPTION, // ALTER [ COLUMN ] column SET ( attribute_option = value [, ... ] )
         ALTER_COLUMN_RESET_ATTRIBUTE_OPTION, // ALTER [ COLUMN ] column RESET ( attribute_option [, ... ] )
-        ALTER_COLUMN_SET_STORAGE, // ALTER [ COLUMN ] column SET STORAGE { PLAIN | EXTERNAL | EXTENDED | MAIN }
+        ALTER_COLUMN_SET_STORAGE, // ALTER [ COLUMN ] column SET STORAGE { PLAIN | EXTERNAL | EXTENDED | MAIN } */
         ADD_TABLE_CONSTRAINT, // ADD table_constraint [ NOT VALID ]
         ADD_TABLE_CONSTRAINT_USING_INDEX, // ADD table_constraint_using_index
         VALIDATE_CONSTRAINT, // VALIDATE CONSTRAINT constraint_name
+        /* not supported by citus: 
         DISABLE_ROW_LEVEL_SECURITY, // DISABLE ROW LEVEL SECURITY
         ENABLE_ROW_LEVEL_SECURITY, // ENABLE ROW LEVEL SECURITY
         FORCE_ROW_LEVEL_SECURITY, // FORCE ROW LEVEL SECURITY
@@ -50,7 +53,7 @@ public class PostgresAlterTableGenerator {
         SET_LOGGED_UNLOGGED, //
         NOT_OF, //
         OWNER_TO, //
-        REPLICA_IDENTITY
+        REPLICA_IDENTITY */
     }
 
     public PostgresAlterTableGenerator(PostgresTable randomTable, PostgresGlobalState globalState,
@@ -110,14 +113,25 @@ public class PostgresAlterTableGenerator {
             // make it more likely that the ALTER TABLE succeeds
             action = Randomly.subset(Randomly.smallNumber(), Action.values());
         }
+        // ADD CONSTRAINT cannot be executed with other subcommands
+        if (action.contains(Action.ADD_TABLE_CONSTRAINT)) {
+            action = new ArrayList<>();
+            action.add(Action.ADD_TABLE_CONSTRAINT);
+        }
+        if (action.contains(Action.ADD_TABLE_CONSTRAINT_USING_INDEX)) {
+            action = new ArrayList<>();
+            action.add(Action.ADD_TABLE_CONSTRAINT_USING_INDEX);
+        }
         if (randomTable.getColumns().size() == 1) {
             action.remove(Action.ALTER_TABLE_DROP_COLUMN);
         }
         if (randomTable.getIndexes().isEmpty()) {
             action.remove(Action.ADD_TABLE_CONSTRAINT_USING_INDEX);
-            action.remove(Action.CLUSTER_ON);
+            // not supported by citus
+            // action.remove(Action.CLUSTER_ON);
         }
-        action.remove(Action.SET_WITH_OIDS);
+        // not supported by citus
+        // action.remove(Action.SET_WITH_OIDS);
         if (action.isEmpty()) {
             throw new IgnoreMeException();
         }
@@ -141,6 +155,7 @@ public class PostgresAlterTableGenerator {
                 errors.add("cannot drop column");
                 errors.add("cannot drop inherited column");
                 break;
+            /* not supported by citus
             case ALTER_COLUMN_TYPE:
                 alterColumn(randomTable, sb);
                 if (Randomly.getBoolean()) {
@@ -174,7 +189,7 @@ public class PostgresAlterTableGenerator {
                 errors.add("could not determine which collation to use for index expression");
                 errors.add("bit string too long for type bit varying");
                 errors.add("cannot alter type of a column used by a generated column");
-                break;
+                break; 
             case ALTER_COLUMN_SET_DROP_DEFAULT:
                 alterColumn(randomTable, sb);
                 if (Randomly.getBoolean()) {
@@ -241,9 +256,10 @@ public class PostgresAlterTableGenerator {
                 sb.append(Randomly.fromOptions("PLAIN", "EXTERNAL", "EXTENDED", "MAIN"));
                 errors.add("can only have storage");
                 errors.add("is an identity column");
-                break;
+                break; */
             case ADD_TABLE_CONSTRAINT:
                 sb.append("ADD ");
+                sb.append("CONSTRAINT asdf ");
                 PostgresCommon.addTableConstraint(sb, randomTable, globalState, errors);
                 errors.add("multiple primary keys for table");
                 errors.add("could not create unique index");
@@ -273,11 +289,16 @@ public class PostgresAlterTableGenerator {
                 break;
             case ADD_TABLE_CONSTRAINT_USING_INDEX:
                 sb.append("ADD ");
-                // sb.append("CONSTRAINT 'asdf' ");
+                sb.append("CONSTRAINT asdf ");
                 sb.append(Randomly.fromOptions("UNIQUE", "PRIMARY KEY"));
                 errors.add("not valid");
                 sb.append(" USING INDEX ");
-                sb.append(randomTable.getRandomIndex().getIndexName());
+                // ADD CONSTRAINT must be on partition column for distributed table
+                if (randomTable.getDistributionColumn() != null) {
+                    sb.append(randomTable.getDistributionColumn().getName());
+                } else {
+                    sb.append(randomTable.getRandomIndex().getIndexName());
+                }
                 errors.add("is not a unique index");
                 errors.add("is already associated with a constraint");
                 errors.add("Cannot create a primary key or unique constraint using such an index");
@@ -293,6 +314,7 @@ public class PostgresAlterTableGenerator {
                 errors.add("does not exist");
                 // FIXME select constraint
                 break;
+            /* not supported by citus: 
             case DISABLE_ROW_LEVEL_SECURITY:
                 sb.append("DISABLE ROW LEVEL SECURITY");
                 break;
@@ -351,7 +373,7 @@ public class PostgresAlterTableGenerator {
                     errors.add("cannot use partial index");
                     errors.add("cannot use invalid index");
                 }
-                break;
+                break; */
             default:
                 throw new AssertionError(a);
             }

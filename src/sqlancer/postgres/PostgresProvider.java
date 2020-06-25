@@ -11,6 +11,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
+import java.util.HashMap;
+import java.util.HashSet;
 
 import sqlancer.AbstractAction;
 import sqlancer.CompositeTestOracle;
@@ -49,6 +51,7 @@ import sqlancer.postgres.gen.PostgresUpdateGenerator;
 import sqlancer.postgres.gen.PostgresVacuumGenerator;
 import sqlancer.postgres.gen.PostgresViewGenerator;
 import sqlancer.sqlite3.gen.SQLite3Common;
+import static sqlancer.postgres.PostgresSchema.getColumnType;
 
 // EXISTS
 // IN
@@ -183,33 +186,6 @@ public final class PostgresProvider extends ProviderAdapter<PostgresGlobalState,
     }
 
     // FIXME: static or not?
-    private class PostgresColumnInfo{
-
-        private final String name;
-        private final String type;
-        private final String constraint;
-
-        public PostgresColumnInfo(String col_name, String col_type, String col_constraint) {
-            this.name = col_name;
-            this.type = col_type; 
-            this.constraint = col_constraint;
-        }
-
-        public String get_name() {
-            return this.name;
-        }
-
-        public String get_type() {
-            return this.type;
-        }
-
-        public String get_constraint() {
-            return this.constraint;
-        }
-
-    }
-
-    // FIXME: static or not?
     private class WorkerNode{
 
         private final String name;
@@ -231,83 +207,124 @@ public final class PostgresProvider extends ProviderAdapter<PostgresGlobalState,
     }
 
     // FIXME: static or not?
-    private final void distributeTable(List<PostgresColumnInfo> columnInfos, String tableName, PostgresGlobalState globalState, Connection con) throws SQLException {
-        if (columnInfos.size() != 0) {
-            PostgresColumnInfo columnToDistributeInfo = Randomly.fromList(columnInfos);
-            globalState.getState().statements.add(new QueryAdapter("SELECT create_distributed_table('" + tableName + "', '" + columnToDistributeInfo.get_name() + "');"));
-            try (Statement s = con.createStatement()) {
-                s.execute("SELECT create_distributed_table('" + tableName + "', '" + columnToDistributeInfo.get_name() + "');");
-            } 
+    private final void distributeTable(List<PostgresColumn> columns, String tableName, PostgresGlobalState globalState, Connection con) throws SQLException {
+        if (columns.size() != 0) {
+            PostgresColumn columnToDistribute = Randomly.fromList(columns);
+            QueryAdapter query = new QueryAdapter("SELECT create_distributed_table('" + tableName + "', '" + columnToDistribute.getName() + "');");
+            globalState.getState().statements.add(query);
+            query.execute(con);
+            // TODO: check sql injection
         }
+    }
+
+    private final List<String> getTableConstraints(String tableName, PostgresGlobalState globalState, Connection con) throws SQLException {
+        List<String> constraints = new ArrayList<>();
+        QueryAdapter query = new QueryAdapter("SELECT constraint_type FROM information_schema.table_constraints WHERE table_name = '" + tableName + "' AND (constraint_type = 'PRIMARY KEY' OR constraint_type = 'UNIQUE' or constraint_type = 'EXCLUDE');");
+        // TODO: decide whether to log
+        // globalState.getState().statements.add(query);
+        ResultSet rs = query.executeAndGet(con);
+        while (rs.next()) {
+            constraints.add(rs.getString("constraint_type"));
+        }
+        return constraints;
     }
 
     // FIXME: static or not?
     private final void createDistributedTable(String tableName, PostgresGlobalState globalState, Connection con) throws SQLException {
-        List<PostgresColumnInfo> columnInfos = new ArrayList<>();
-        int numDistributionConstraints = 0;
-        QueryAdapter query = new QueryAdapter("SELECT * FROM information_schema.table_constraints WHERE table_name = '" + tableName + "' AND (constraint_type = 'PRIMARY KEY' OR constraint_type = 'UNIQUE' or constraint_type = 'EXCLUDE');");
-        globalState.getState().statements.add(query);
-        ResultSet rs = query.executeAndGet(con);
-        while (rs.next()) {
-            numDistributionConstraints ++;
-        }
-        if (numDistributionConstraints == 0) {
-            query = new QueryAdapter("SELECT column_name, data_type FROM information_schema.columns WHERE table_name = '" + tableName + "';");
-            globalState.getState().statements.add(query);
-            rs = query.executeAndGet(con);
+        List<PostgresColumn> columns = new ArrayList<>();
+        List<String> tableConstraints = getTableConstraints(tableName, globalState, con);
+        if (tableConstraints.size() == 0) {
+            QueryAdapter query = new QueryAdapter("SELECT column_name, data_type FROM information_schema.columns WHERE table_name = '" + tableName + "';");
+            // TODO: decide whether to log
+            // globalState.getState().statements.add(query);
+            ResultSet rs = query.executeAndGet(con);
             while (rs.next()) {
-                String column_name = rs.getString("column_name");
-                String data_type = rs.getString("data_type");
-                PostgresColumnInfo cInfo = new PostgresColumnInfo(column_name, data_type, null);
-                columnInfos.add(cInfo);
+                String columnName = rs.getString("column_name");
+                String dataType = rs.getString("data_type");
+                PostgresColumn c = new PostgresColumn(columnName, getColumnType(dataType));
+                columns.add(c);
             }
-            distributeTable(columnInfos, tableName, globalState, con);
         } else {
-            query = new QueryAdapter("SELECT c.column_name, c.data_type, tc.constraint_type FROM information_schema.table_constraints tc JOIN information_schema.constraint_column_usage AS ccu USING (constraint_schema, constraint_name) JOIN information_schema.columns AS c ON c.table_schema = tc.constraint_schema AND tc.table_name = c.table_name AND ccu.column_name = c.column_name WHERE (constraint_type = 'PRIMARY KEY' OR constraint_type = 'UNIQUE' OR constraint_type = 'EXCLUDE') AND c.table_name = '" + tableName + "';");
-            globalState.getState().statements.add(query);
-            rs = query.executeAndGet(con);
+            // TODO: multiple constraints?
+            HashMap<PostgresColumn, List<String>> columnConstraints = new HashMap<>();
+            QueryAdapter query = new QueryAdapter("SELECT c.column_name, c.data_type, tc.constraint_type FROM information_schema.table_constraints tc JOIN information_schema.constraint_column_usage AS ccu USING (constraint_schema, constraint_name) JOIN information_schema.columns AS c ON c.table_schema = tc.constraint_schema AND tc.table_name = c.table_name AND ccu.column_name = c.column_name WHERE (constraint_type = 'PRIMARY KEY' OR constraint_type = 'UNIQUE' OR constraint_type = 'EXCLUDE') AND c.table_name = '" + tableName + "';");
+            // TODO: decide whether to log
+            // globalState.getState().statements.add(query);
+            ResultSet rs = query.executeAndGet(con);
             while (rs.next()) {
-                String column_name = rs.getString("column_name");
-                String data_type = rs.getString("data_type");
-                String constraint_type = rs.getString("constraint_type");
-                PostgresColumnInfo cInfo = new PostgresColumnInfo(column_name, data_type,constraint_type);
-                columnInfos.add(cInfo);
+                String columnName = rs.getString("column_name");
+                String dataType = rs.getString("data_type");
+                String constraintType = rs.getString("constraint_type");
+                PostgresColumn c = new PostgresColumn(columnName, getColumnType(dataType));
+                if (columnConstraints.containsKey(c)) {
+                    columnConstraints.get(c).add(constraintType);
+                } else {
+                    List<String> cc = new ArrayList<>();
+                    cc.add(constraintType);
+                    columnConstraints.put(c, cc);
+                }
+            }
+            for (PostgresColumn c : columnConstraints.keySet()) {
+                // TODO: check if table and column constraint sets are equal? but then it's O(N) instead of O(1)
+                if (tableConstraints.size() == columnConstraints.get(c).size()) {
+                    columns.add(c);
+                }
             }
             // TODO: figure out how to use EXCLUDE
-            distributeTable(columnInfos, tableName, globalState, con);
         }
-        if (Randomly.getBooleanWithRatherLowProbability()) {
-            // upgrade distributed table to reference table
-            query = new QueryAdapter("SELECT upgrade_to_reference_table('" + tableName + "');");
-            globalState.getState().statements.add(query);
-            query.execute(con);
-        }
+        distributeTable(columns, tableName, globalState, con);
     }
 
     @Override
+<<<<<<< HEAD
     public void generateDatabase(PostgresGlobalState globalState) throws SQLException {
+        HashSet<String> volatileFunctions = new HashSet<>();
+        HashSet<String> stableFunctions = new HashSet<>();
+        HashSet<String> immutableFunctions = new HashSet<>();
+        QueryAdapter query = new QueryAdapter("SELECT proname, provolatile FROM pg_proc;");
+        globalState.getState().statements.add(query);
+        ResultSet rs = query.executeAndGet(con);
+        while (rs.next()) {
+            String functionName = rs.getString("proname");
+            String functionVolatility = rs.getString("provolatile");
+            if (functionVolatility.equals("v")) {
+                volatileFunctions.add(functionName);
+            } else if (functionVolatility.equals("s")) {
+                stableFunctions.add(functionName);
+            } else {
+                immutableFunctions.add(functionName);
+            }
+        }
+        globalState.setVolatilities(volatileFunctions, stableFunctions, immutableFunctions);
+
         while (globalState.getSchema().getDatabaseTables().size() < Randomly.fromOptions(1, 2)) {
             try {
                 String tableName = SQLite3Common.createTableName(globalState.getSchema().getDatabaseTables().size());
                 Query createTable = PostgresTableGenerator.generate(tableName, globalState.getSchema(),
                         generateOnlyKnown, globalState);
                 globalState.executeStatement(createTable);
-                if (Randomly.getBooleanWithRatherLowProbability()) {
-                    // create local table
-                } else if (Randomly.getBooleanWithRatherLowProbability()) {
-                    // create reference table
-                    QueryAdapter query = new QueryAdapter("SELECT create_reference_table('" + tableName + "');");
-                    globalState.getState().statements.add(query);
-                    query.execute(con);
-                } else {
-                    // create distributed table
-                    createDistributedTable(tableName, globalState, con);
                 }
                 globalState.setSchema(PostgresSchema.fromConnection(con, databaseName));
             } catch (IgnoreMeException e) {
 
             }
         }
+
+        for (PostgresTable table : globalState.getSchema().getDatabaseTables()) {
+            // TODO: random 0-1 range double
+            if (Randomly.getBooleanWithRatherLowProbability()) {
+                // create local table
+            } else if (Randomly.getBooleanWithRatherLowProbability()) {
+                // create reference table
+                query = new QueryAdapter("SELECT create_reference_table('" + table.getName() + "');");
+                globalState.getState().statements.add(query);
+                query.execute(con);
+            } else {
+                // create distributed table
+                createDistributedTable(table.getName(), globalState, con);
+            }
+        }
+        globalState.setSchema(PostgresSchema.fromConnection(con, databaseName));
 
         StatementExecutor<PostgresGlobalState, Action> se = new StatementExecutor<>(globalState, Action.values(),
                 PostgresProvider::mapActions, (q) -> {
@@ -341,52 +358,35 @@ public final class PostgresProvider extends ProviderAdapter<PostgresGlobalState,
         }).collect(Collectors.toList());
         return new CompositeTestOracle(oracles);
     }
-
+    
     @Override
     public Connection createDatabase(PostgresGlobalState globalState) throws SQLException {
-        String databaseName = globalState.getDatabaseName();
-        String username = globalState.getOptions().getUserName();
-        String password = globalState.getOptions().getPassword();
-        int coordinatorPort = ((PostgresGlobalState)globalState).getDmbsSpecificOptions().coordinatorPort;
-        String entryDatabaseName = ((PostgresGlobalState)globalState).getDmbsSpecificOptions().entryDatabaseName;
-        String urlCoordinatorInitDB = "jdbc:postgresql://localhost:" + coordinatorPort + "/" + ((PostgresGlobalState)globalState).getDmbsSpecificOptions().entryDatabaseName;
-        globalState.getState().statements.add(new QueryAdapter("psql -p " + coordinatorPort));
-        globalState.getState().statements.add(new QueryAdapter("\\c " + entryDatabaseName));
-        Connection con = DriverManager.getConnection(urlCoordinatorInitDB, username, password);
-        globalState.getState().statements.add(new QueryAdapter("SELECT * FROM master_get_active_worker_nodes()"));
-        globalState.getState().statements.add(new QueryAdapter("DROP DATABASE IF EXISTS " + databaseName));
-        String createDatabaseCommand = getCreateDatabaseCommand(databaseName, con, globalState);
-        globalState.getState().statements.add(new QueryAdapter(createDatabaseCommand));
-        // FIXME: why do some executed statements have ; and some don't?
-        List<WorkerNode> worker_nodes = new ArrayList<>();
-        // get info about all servers hosting worker nodes
-        try (Statement s = con.createStatement()) {
-            ResultSet rs = s.executeQuery("SELECT * FROM master_get_active_worker_nodes();");
-            while (rs.next()) {
-                String node_name = rs.getString("node_name");
-                int node_port = rs.getInt("node_port");
-                WorkerNode w = new WorkerNode(node_name, node_port);
-                worker_nodes.add(w);
-            }
-        }
-        try (Statement s = con.createStatement()) {
-            s.execute("DROP DATABASE IF EXISTS " + databaseName);
-        }
-        try (Statement s = con.createStatement()) {
-            s.execute(createDatabaseCommand);
-        }
-        con.close();
-        for (int i = 0; i < worker_nodes.size(); i++) {
-            WorkerNode w = worker_nodes.get(i);
-            // create database with given databaseName at each server hosting worker node
-            String urlWorkerInitDB = "jdbc:postgresql://localhost:" + w.get_port() + "/" + entryDatabaseName;
-            globalState.getState().statements.add(new QueryAdapter("\\q"));
-            globalState.getState().statements.add(new QueryAdapter("psql -p " + w.get_port()));
+        // lock database creation process per thread
+        synchronized(PostgresProvider.class) {
+            String databaseName = globalState.getDatabaseName();
+            String username = globalState.getOptions().getUserName();
+            String password = globalState.getOptions().getPassword();
+            int coordinatorPort = ((PostgresGlobalState)globalState).getDmbsSpecificOptions().coordinatorPort;
+            String entryDatabaseName = ((PostgresGlobalState)globalState).getDmbsSpecificOptions().entryDatabaseName;
+            String urlCoordinatorInitDB = "jdbc:postgresql://localhost:" + coordinatorPort + "/" + entryDatabaseName;
+            globalState.getState().statements.add(new QueryAdapter("psql -p " + coordinatorPort));
             globalState.getState().statements.add(new QueryAdapter("\\c " + entryDatabaseName));
-            con = DriverManager.getConnection(urlWorkerInitDB, username, password);
+            Connection con = DriverManager.getConnection(urlCoordinatorInitDB, username, password);
+            globalState.getState().statements.add(new QueryAdapter("SELECT * FROM master_get_active_worker_nodes()"));
             globalState.getState().statements.add(new QueryAdapter("DROP DATABASE IF EXISTS " + databaseName));
-            createDatabaseCommand = getCreateDatabaseCommand(databaseName, con);
+            String createDatabaseCommand = getCreateDatabaseCommand(databaseName, con, globalState);
             globalState.getState().statements.add(new QueryAdapter(createDatabaseCommand));
+            List<WorkerNode> workerNodes = new ArrayList<>();
+            // get info about all servers hosting worker nodes
+            try (Statement s = con.createStatement()) {
+                ResultSet rs = s.executeQuery("SELECT * FROM master_get_active_worker_nodes();");
+                while (rs.next()) {
+                    String node_name = rs.getString("node_name");
+                    int node_port = rs.getInt("node_port");
+                    WorkerNode w = new WorkerNode(node_name, node_port);
+                    workerNodes.add(w);
+                }
+            }
             try (Statement s = con.createStatement()) {
                 s.execute("DROP DATABASE IF EXISTS " + databaseName);
             }
@@ -394,46 +394,63 @@ public final class PostgresProvider extends ProviderAdapter<PostgresGlobalState,
                 s.execute(createDatabaseCommand);
             }
             con.close();
-            // add citus extension to database with given databaseName at each server hosting worker nodes
-            String urlWorkerCurDB = "jdbc:postgresql://localhost:" + w.get_port() + "/" + databaseName;
+            for (WorkerNode w : workerNodes) {
+                // create database with given databaseName at each server hosting worker node
+                String urlWorkerInitDB = "jdbc:postgresql://localhost:" + w.get_port() + "/" + entryDatabaseName;
+                globalState.getState().statements.add(new QueryAdapter("\\q"));
+                globalState.getState().statements.add(new QueryAdapter("psql -p " + w.get_port()));
+                globalState.getState().statements.add(new QueryAdapter("\\c " + entryDatabaseName));
+                con = DriverManager.getConnection(urlWorkerInitDB, username, password);
+                globalState.getState().statements.add(new QueryAdapter("DROP DATABASE IF EXISTS " + databaseName));
+                createDatabaseCommand = getCreateDatabaseCommand(databaseName, con);
+                globalState.getState().statements.add(new QueryAdapter(createDatabaseCommand));
+                try (Statement s = con.createStatement()) {
+                    s.execute("DROP DATABASE IF EXISTS " + databaseName);
+                }
+                try (Statement s = con.createStatement()) {
+                    s.execute(createDatabaseCommand);
+                }
+                con.close();
+                // add citus extension to database with given databaseName at each server hosting worker nodes
+                String urlWorkerCurDB = "jdbc:postgresql://localhost:" + w.get_port() + "/" + databaseName;
+                globalState.getState().statements.add(new QueryAdapter("\\c " + databaseName));
+                con = DriverManager.getConnection(urlWorkerCurDB, username, password);
+                globalState.getState().statements.add(new QueryAdapter("CREATE EXTENSION citus;"));
+                try (Statement s = con.createStatement()) {
+                    s.execute("CREATE EXTENSION citus;");
+                }
+                con.close();
+            }
+            globalState.getState().statements.add(new QueryAdapter("\\q"));
+            globalState.getState().statements.add(new QueryAdapter("psql -p " + coordinatorPort));
             globalState.getState().statements.add(new QueryAdapter("\\c " + databaseName));
-            con = DriverManager.getConnection(urlWorkerCurDB, username, password);
             globalState.getState().statements.add(new QueryAdapter("CREATE EXTENSION citus;"));
+            String urlCoordinatorCurDB = "jdbc:postgresql://localhost:" + coordinatorPort + "/" + databaseName;
+            con = DriverManager.getConnection(urlCoordinatorCurDB, username, password);
+            // add citus extension to database with given databaseName at server hosting coordinator node
             try (Statement s = con.createStatement()) {
                 s.execute("CREATE EXTENSION citus;");
             }
-            con.close();
-        }
-        globalState.getState().statements.add(new QueryAdapter("\\q"));
-        globalState.getState().statements.add(new QueryAdapter("psql -p " + coordinatorPort));
-        globalState.getState().statements.add(new QueryAdapter("\\c " + databaseName));
-        globalState.getState().statements.add(new QueryAdapter("CREATE EXTENSION citus;"));
-        String urlCoordinatorCurDB = "jdbc:postgresql://localhost:" + coordinatorPort + "/" + databaseName;
-        con = DriverManager.getConnection(urlCoordinatorCurDB, username, password);
-        // add citus extension to database with given databaseName at server hosting coordinator node
-        try (Statement s = con.createStatement()) {
-            s.execute("CREATE EXTENSION citus;");
-        }
-        // add all servers hosting worker nodes as worker nodes to coordinator node for database with given databaseName
-        for (int i = 0; i < worker_nodes.size(); i++) {
-            WorkerNode w = worker_nodes.get(i);
-            globalState.getState().statements.add(new QueryAdapter("SELECT * from master_add_node('" + w.get_name() + "', " + w.get_port() + ");"));
-            try (Statement s = con.createStatement()) {
-                s.execute("SELECT * from master_add_node('" + w.get_name() + "', " + w.get_port() + ");");
+            // add all servers hosting worker nodes as worker nodes to coordinator node for database with given databaseName
+            for (WorkerNode w : workerNodes) {
+                globalState.getState().statements.add(new QueryAdapter("SELECT * from master_add_node('" + w.get_name() + "', " + w.get_port() + ");"));
+                try (Statement s = con.createStatement()) {
+                    s.execute("SELECT * from master_add_node('" + w.get_name() + "', " + w.get_port() + ");");
+                }
             }
+            List<String> statements = Arrays.asList(
+                    // "CREATE EXTENSION IF NOT EXISTS btree_gin;",
+                    // "CREATE EXTENSION IF NOT EXISTS btree_gist;", // TODO: undefined symbol: elog_start
+                    "CREATE EXTENSION IF NOT EXISTS pg_prewarm;", "SET max_parallel_workers_per_gather=" + ((PostgresGlobalState)globalState).getDmbsSpecificOptions().max_parallel_workers_per_gather);
+            for (String s : statements) {
+                QueryAdapter query = new QueryAdapter(s);
+                globalState.getState().statements.add(query);
+                query.execute(con);
+            }
+            // new QueryAdapter("set jit_above_cost = 0; set jit_inline_above_cost = 0; set jit_optimize_above_cost =
+            // 0;").execute(con);
+            return con;
         }
-        List<String> statements = Arrays.asList(
-                // "CREATE EXTENSION IF NOT EXISTS btree_gin;",
-                // "CREATE EXTENSION IF NOT EXISTS btree_gist;", // TODO: undefined symbol: elog_start
-                "CREATE EXTENSION IF NOT EXISTS pg_prewarm;", "SET max_parallel_workers_per_gather=" + ((PostgresGlobalState)globalState).getDmbsSpecificOptions().max_parallel_workers_per_gather);
-        for (String s : statements) {
-            QueryAdapter query = new QueryAdapter(s);
-            globalState.getState().statements.add(query);
-            query.execute(con);
-        }
-        // new QueryAdapter("set jit_above_cost = 0; set jit_inline_above_cost = 0; set jit_optimize_above_cost =
-        // 0;").execute(con);
-        return con;
     }
 
     private String getCreateDatabaseCommand(String databaseName, Connection con, PostgresGlobalState state) {
