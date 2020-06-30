@@ -1,9 +1,9 @@
 package sqlancer.postgres.gen;
 
 import java.util.HashSet;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.ArrayList;
 
 import sqlancer.IgnoreMeException;
 import sqlancer.Query;
@@ -28,12 +28,12 @@ public class PostgresAlterTableGenerator {
         // ALTER_TABLE_ADD_COLUMN, // [ COLUMN ] column data_type [ COLLATE collation ] [
         // column_constraint [ ... ] ]
         ALTER_TABLE_DROP_COLUMN, // DROP [ COLUMN ] [ IF EXISTS ] column [ RESTRICT | CASCADE ]
-        /* not supported by citus
         ALTER_COLUMN_TYPE, // ALTER [ COLUMN ] column [ SET DATA ] TYPE data_type [ COLLATE collation ] [
                            // USING expression ]
         ALTER_COLUMN_SET_DROP_DEFAULT, // ALTER [ COLUMN ] column SET DEFAULT expression and ALTER [ COLUMN ] column
                                        // DROP DEFAULT
         ALTER_COLUMN_SET_DROP_NULL, // ALTER [ COLUMN ] column { SET | DROP } NOT NULL
+        /* not supported by citus
         ALTER_COLUMN_SET_STATISTICS, // ALTER [ COLUMN ] column SET STATISTICS integer
         ALTER_COLUMN_SET_ATTRIBUTE_OPTION, // ALTER [ COLUMN ] column SET ( attribute_option = value [, ... ] )
         ALTER_COLUMN_RESET_ATTRIBUTE_OPTION, // ALTER [ COLUMN ] column RESET ( attribute_option [, ... ] )
@@ -107,21 +107,22 @@ public class PostgresAlterTableGenerator {
         sb.append(" ");
         int i = 0;
         List<Action> action;
-        if (Randomly.getBoolean()) {
+        // 1 subcommand per ALTER TABLE command if table is distributed
+        if (randomTable.getDistributionColumn() != null) {
+            action = Randomly.subset(1, Action.values());
+        } else if (Randomly.getBoolean()) {
             action = Randomly.nonEmptySubset(Action.values());
         } else {
             // make it more likely that the ALTER TABLE succeeds
             action = Randomly.subset(Randomly.smallNumber(), Action.values());
         }
-        // ADD CONSTRAINT cannot be executed with other subcommands
-        if (action.contains(Action.ADD_TABLE_CONSTRAINT)) {
-            action = new ArrayList<>();
-            action.add(Action.ADD_TABLE_CONSTRAINT);
+        // TODO: Verify that we can execute commands with multiple subcommands ???
+        /* if (action.contains(Action.ADD_TABLE_CONSTRAINT)) {
+            action = Arrays.asList(Action.ADD_TABLE_CONSTRAINT);
         }
         if (action.contains(Action.ADD_TABLE_CONSTRAINT_USING_INDEX)) {
-            action = new ArrayList<>();
-            action.add(Action.ADD_TABLE_CONSTRAINT_USING_INDEX);
-        }
+            action = Arrays.asList(Action.ADD_TABLE_CONSTRAINT_USING_INDEX);
+        } */
         if (randomTable.getColumns().size() == 1) {
             action.remove(Action.ALTER_TABLE_DROP_COLUMN);
         }
@@ -141,11 +142,18 @@ public class PostgresAlterTableGenerator {
             }
             switch (a) {
             case ALTER_TABLE_DROP_COLUMN:
+                List<PostgresColumn> columns = new ArrayList<>(randomTable.getColumns());
+                if (randomTable.getDistributionColumn() != null) {
+                    columns.removeIf(c -> c.getName().equals(randomTable.getDistributionColumn().getName()));
+                }
+                if (columns.isEmpty()) {
+                    break;
+                } 
                 sb.append("DROP ");
                 if (Randomly.getBoolean()) {
                     sb.append(" IF EXISTS ");
                 }
-                sb.append(randomTable.getRandomColumn().getName());
+                sb.append(Randomly.fromList(columns).getName());
                 errors.add("because other objects depend on it");
                 if (Randomly.getBoolean()) {
                     sb.append(" ");
@@ -155,9 +163,10 @@ public class PostgresAlterTableGenerator {
                 errors.add("cannot drop column");
                 errors.add("cannot drop inherited column");
                 break;
-            /* not supported by citus
             case ALTER_COLUMN_TYPE:
-                alterColumn(randomTable, sb);
+                if (!alterColumn(randomTable, sb, false)) {
+                    break;
+                }
                 if (Randomly.getBoolean()) {
                     sb.append(" SET DATA");
                 }
@@ -191,7 +200,9 @@ public class PostgresAlterTableGenerator {
                 errors.add("cannot alter type of a column used by a generated column");
                 break; 
             case ALTER_COLUMN_SET_DROP_DEFAULT:
-                alterColumn(randomTable, sb);
+                if (!alterColumn(randomTable, sb, false)) {
+                    break;
+                }
                 if (Randomly.getBoolean()) {
                     sb.append("DROP DEFAULT");
                 } else {
@@ -206,16 +217,22 @@ public class PostgresAlterTableGenerator {
                 errors.add("is an identity column");
                 break;
             case ALTER_COLUMN_SET_DROP_NULL:
-                alterColumn(randomTable, sb);
                 if (Randomly.getBoolean()) {
+                    if (!alterColumn(randomTable, sb, true)) {
+                        break;
+                    }
                     sb.append("SET NOT NULL");
                     errors.add("contains null values");
                 } else {
+                    if (!alterColumn(randomTable, sb, false)) {
+                        break;
+                    }
                     sb.append("DROP NOT NULL");
                     errors.add("is in a primary key");
                     errors.add("is an identity column");
                 }
-                break;
+                break; 
+            /* not supported by citus
             case ALTER_COLUMN_SET_STATISTICS:
                 alterColumn(randomTable, sb);
                 sb.append("SET STATISTICS ");
@@ -293,7 +310,7 @@ public class PostgresAlterTableGenerator {
                 sb.append(Randomly.fromOptions("UNIQUE", "PRIMARY KEY"));
                 errors.add("not valid");
                 sb.append(" USING INDEX ");
-                // ADD CONSTRAINT must be on partition column for distributed table
+                // CONSTRAINT must be added on partition column for distributed table
                 if (randomTable.getDistributionColumn() != null) {
                     sb.append(randomTable.getDistributionColumn().getName());
                 } else {
@@ -382,11 +399,19 @@ public class PostgresAlterTableGenerator {
         return new QueryAdapter(sb.toString(), errors, true);
     }
 
-    private static void alterColumn(PostgresTable randomTable, StringBuilder sb) {
+    private static boolean alterColumn(PostgresTable randomTable, StringBuilder sb, boolean allowDistributionColumn) {
+        List<PostgresColumn> columns = new ArrayList<>(randomTable.getColumns());
+        if (randomTable.getDistributionColumn() != null && !allowDistributionColumn) {
+            columns.removeIf(c -> c.getName().equals(randomTable.getDistributionColumn().getName()));
+        }
+        if (columns.isEmpty()) {
+            return false;
+        }
         sb.append("ALTER ");
-        randomColumn = randomTable.getRandomColumn();
+        randomColumn = Randomly.fromList(columns);
         sb.append(randomColumn.getName());
         sb.append(" ");
+        return true;
     }
 
 }

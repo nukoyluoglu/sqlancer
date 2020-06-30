@@ -6,7 +6,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import java.util.HashSet;
+import java.util.HashMap;
 
 import sqlancer.IgnoreMeException;
 import sqlancer.Randomly;
@@ -67,28 +67,16 @@ public class PostgresExpressionGenerator implements ExpressionGenerator<Postgres
 
     private boolean allowAggregateFunctions;
 
-    private HashSet<String> volatileFunctions;
+    private HashMap<String, Character> functionsAndTypes;
 
-    private HashSet<String> stableFunctions;
-
-    private HashSet<String> immutableFunctions;
-
-    private boolean allowVolatileFunction;
-
-    private boolean allowStableFunction;
-
-    private boolean allowImmutableFunction;
+    private List<Character> allowedFunctionTypes;
 
     public PostgresExpressionGenerator(PostgresGlobalState globalState) {
         this.r = globalState.getRandomly();
         this.maxDepth = globalState.getOptions().getMaxExpressionDepth();
         this.globalState = globalState;
-        this.volatileFunctions = globalState.getVolatileFunctions();
-        this.stableFunctions = globalState.getStableFunctions();
-        this.immutableFunctions = globalState.getImmutableFunctions();
-        this.allowVolatileFunction = globalState.getAllowVolatileFunction();
-        this.allowStableFunction = globalState.getAllowStableFunction();
-        this.allowImmutableFunction = globalState.getAllowImmutableFunction();
+        this.functionsAndTypes = globalState.getFunctionsAndTypes();
+        this.allowedFunctionTypes = globalState.getAllowedFunctionTypes();
     }
 
     public PostgresExpressionGenerator setColumns(List<PostgresColumn> columns) {
@@ -131,52 +119,24 @@ public class PostgresExpressionGenerator implements ExpressionGenerator<Postgres
     private PostgresExpression generateFunctionWithUnknownResult(int depth, PostgresDataType type) {
         List<PostgresFunctionWithUnknownResult> supportedFunctions = PostgresFunctionWithUnknownResult
                 .getSupportedFunctions(type);
+        // filters functions by allowed type (stable 's', immutable 'i', volatile 'v')
+        supportedFunctions = supportedFunctions.stream().filter(f -> allowedFunctionTypes.contains(functionsAndTypes.get(f.getName()))).collect(Collectors.toList());
         if (supportedFunctions.isEmpty()) {
             throw new IgnoreMeException();
         }
         PostgresFunctionWithUnknownResult randomFunction = Randomly.fromList(supportedFunctions);
-        if (! allowVolatileFunction) {
-            boolean notEligible = true;
-            do {
-                randomFunction = Randomly.fromList(supportedFunctions);
-                boolean volatility = volatileFunctions.contains(randomFunction.getName());
-                boolean stability = stableFunctions.contains(randomFunction.getName());
-                boolean immutability = immutableFunctions.contains(randomFunction.getName());
-                volatility = false;
-                for (String volatileFunction : volatileFunctions) {
-                    if ((randomFunction.getName()).equals(volatileFunction)) {
-                        volatility = volatility || true;
-                    }
-                }
-                notEligible = (!allowVolatileFunction && volatility) || (!allowStableFunction && stability) || (!allowImmutableFunction && immutability);
-            } while (notEligible);
-        }
         return new PostgresFunction(randomFunction, type, randomFunction.getArguments(type, this, depth + 1));
     }
 
     private PostgresExpression generateFunctionWithKnownResult(int depth, PostgresDataType type) {
         List<PostgresFunctionWithResult> functions = Stream.of(PostgresFunction.PostgresFunctionWithResult.values())
                 .filter(f -> f.supportsReturnType(type)).collect(Collectors.toList());
+        // filters functions by allowed type (stable 's', immutable 'i', volatile 'v')
+        functions = functions.stream().filter(f -> allowedFunctionTypes.contains(functionsAndTypes.get(f.getName()))).collect(Collectors.toList());
         if (functions.isEmpty()) {
             throw new IgnoreMeException();
         }
         PostgresFunctionWithResult randomFunction = Randomly.fromList(functions);
-        if (! allowVolatileFunction) {
-            boolean notEligible = true;
-            do {
-                randomFunction = Randomly.fromList(functions);
-                boolean volatility = volatileFunctions.contains(randomFunction.getName());
-                boolean stability = stableFunctions.contains(randomFunction.getName());
-                boolean immutability = immutableFunctions.contains(randomFunction.getName());
-                volatility = false;
-                for (String volatileFunction : volatileFunctions) {
-                    if ((randomFunction.getName()).equals(volatileFunction)) {
-                        volatility = volatility || true;
-                    }
-                }
-                notEligible = (!allowVolatileFunction && volatility) || (!allowStableFunction && stability) || (!allowImmutableFunction && immutability);
-            } while (notEligible);
-        }
         int nrArgs = randomFunction.getNrArgs();
         if (randomFunction.isVariadic()) {
             nrArgs += Randomly.smallNumber();

@@ -40,16 +40,8 @@ public final class PostgresUpdateGenerator {
 
         // UPDATE must not include partition column if table is distributed
         if (randomTable.getDistributionColumn() != null) {
-            int toRemove = -1;
-            for (int i = 0; i < columns.size(); i++) {
-                PostgresColumn c = columns.get(i);
-                if ((c.getName()).equals(randomTable.getDistributionColumn().getName())) {
-                    toRemove = i;
-                }
-            }
-            if (toRemove != -1) {
-                columns.remove(toRemove);
-            }
+            // remove column whose name equals to name of distribution column
+            columns.removeIf(c -> (c.getName()).equals(randomTable.getDistributionColumn().getName()));
         }
         if (columns.isEmpty()) {
             throw new IgnoreMeException();
@@ -84,11 +76,15 @@ public final class PostgresUpdateGenerator {
         PostgresCommon.addCommonExpressionErrors(errors);
         if (!Randomly.getBooleanWithSmallProbability()) {
             sb.append(" WHERE ");
-            // VOLATILE funcitons cannot be used in WHERE clauses on distributed tables
-            globalState.setAllowVolatileFunction(false);
+            // functions used in UPDATE queries on distributed tables must not be VOLATILE
+            // STABLE functions used in UPDATE queries cannot be called with column references
+            globalState.setAllowedFunctionTypes(Arrays.asList('i'));
+            // TODO: new errors?
+            errors.add("must not be VOLATILE");
+            errors.add("STABLE functions");
             PostgresExpression where = PostgresExpressionGenerator.generateExpression(globalState,
                     randomTable.getColumns(), PostgresDataType.BOOLEAN);
-            globalState.setAllowVolatileFunction(true);
+            globalState.setDefaultAllowedFunctionTypes();
             sb.append(PostgresVisitor.asString(where));
         }
 

@@ -42,16 +42,19 @@ public final class PostgresInsertGenerator {
         List<PostgresColumn> columns = table.getRandomNonEmptyColumnSubset();
         sb.append("(");
         // INSERT must include partition column if table is distributed
-        if (table.getDistributionColumn() != null) {
-            PostgresColumn distributionColumn = table.getDistributionColumn();
-            boolean distributionColumnIncluded = false;
-            for (PostgresColumn c : columns) {
-                distributionColumnIncluded = distributionColumnIncluded || c.getName().equals(distributionColumn.getName());
-            }
-            if (! distributionColumnIncluded) {
-                for (PostgresColumn c : table.getColumns()) {
-                    if (c.getName().equals(distributionColumn.getName())) {
-                        columns.add(c);
+        PostgresColumn distributionColumn = table.getDistributionColumn();
+        // check if table is distributed
+        if (distributionColumn != null) {
+            boolean distributionColumnHasDefaultValue = table.getColumnsWithDefaultValues().stream().anyMatch(c -> c.getName().equals(distributionColumn.getName()));
+            // check if distribution column does not have default value
+            if (! distributionColumnHasDefaultValue) {
+                boolean distributionColumnIncluded = columns.stream().anyMatch(c -> c.getName().equals(distributionColumn.getName()));
+                // check if query does not include distribution column
+                if (! distributionColumnIncluded) {
+                    for (PostgresColumn c : table.getColumns()) {
+                        if (c.getName().equals(distributionColumn.getName())) {
+                            columns.add(c);
+                       }
                     }
                 }
             }
@@ -73,16 +76,20 @@ public final class PostgresInsertGenerator {
                 if (i != 0) {
                     sbRowValue.append(", ");
                 }
-                String valueToInsert = PostgresVisitor.asString(PostgresExpressionGenerator
-                .generateConstant(globalState.getRandomly(), columns.get(i).getType()));
-                if (columns.get(i).getName().equals(table.getDistributionColumn().getName())) {
+                if (table.getDistributionColumn() != null && columns.get(i).getName().equals(table.getDistributionColumn().getName())) {
                     // INSERT cannot be performed with NULL in the partition column on a distributed table
+                    String valueToInsert;
                     do {
                         valueToInsert = PostgresVisitor.asString(PostgresExpressionGenerator
                 .generateConstant(globalState.getRandomly(), columns.get(i).getType()));
-                    } while (valueToInsert.contains("NULL"));
+                    } while (valueToInsert.contains("NULL") || valueToInsert.contains("null"));
+                    // TODO: try using constant values for partition column
+                    errors.add("failed to evaluate partition key in insert");
+                    sbRowValue.append(valueToInsert);
+                } else {
+                    sbRowValue.append(PostgresVisitor.asString(PostgresExpressionGenerator
+                        .generateConstant(globalState.getRandomly(), columns.get(i).getType())));
                 }
-                sbRowValue.append(valueToInsert);
             }
             sbRowValue.append(")");
 
@@ -99,7 +106,7 @@ public final class PostgresInsertGenerator {
                 if (i != 0) {
                     sb.append(", ");
                 }
-                insertRow(globalState, sb, columns, n == 1);
+                insertRow(globalState, sb, columns, table, n == 1);
             }
         }
         if (Randomly.getBooleanWithRatherLowProbability()) {
@@ -124,7 +131,7 @@ public final class PostgresInsertGenerator {
         return new QueryAdapter(sb.toString(), errors);
     }
 
-    private static void insertRow(PostgresGlobalState globalState, StringBuilder sb, List<PostgresColumn> columns,
+    private static void insertRow(PostgresGlobalState globalState, StringBuilder sb, List<PostgresColumn> columns, PostgresTable table,
             boolean canBeDefault) {
         sb.append("(");
         for (int i = 0; i < columns.size(); i++) {
@@ -133,14 +140,30 @@ public final class PostgresInsertGenerator {
             }
             if (!Randomly.getBooleanWithSmallProbability() || !canBeDefault) {
                 PostgresExpression generateConstant;
-                if (Randomly.getBoolean()) {
-                    generateConstant = PostgresExpressionGenerator.generateConstant(globalState.getRandomly(),
-                            columns.get(i).getType());
+                if (table.getDistributionColumn() != null && columns.get(i).getName().equals(table.getDistributionColumn().getName())) {
+                    // INSERT cannot be performed with NULL in the partition column on a distributed table
+                    String valueToInsert;
+                    do {
+                        if (Randomly.getBoolean()) {
+                            generateConstant = PostgresExpressionGenerator.generateConstant(globalState.getRandomly(),
+                                    columns.get(i).getType());
+                        } else {
+                            generateConstant = new PostgresExpressionGenerator(globalState)
+                                    .generateExpression(columns.get(i).getType());
+                        }
+                        valueToInsert = PostgresVisitor.asString(generateConstant);
+                    } while (valueToInsert.contains("NULL") || valueToInsert.contains("null"));
+                    sb.append(valueToInsert);
                 } else {
-                    generateConstant = new PostgresExpressionGenerator(globalState)
-                            .generateExpression(columns.get(i).getType());
-                }
-                sb.append(PostgresVisitor.asString(generateConstant));
+                    if (Randomly.getBoolean()) {
+                        generateConstant = PostgresExpressionGenerator.generateConstant(globalState.getRandomly(),
+                                columns.get(i).getType());
+                    } else {
+                        generateConstant = new PostgresExpressionGenerator(globalState)
+                                .generateExpression(columns.get(i).getType());
+                    }
+                    sb.append(PostgresVisitor.asString(generateConstant));
+                }    
             } else {
                 sb.append("DEFAULT");
             }

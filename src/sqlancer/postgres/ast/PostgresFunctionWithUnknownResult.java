@@ -153,7 +153,7 @@ public enum PostgresFunctionWithUnknownResult {
         this.functionName = functionName;
         this.returnType = returnType;
         this.argTypes = indexType.clone();
-
+        // TODO: add volatile/not info - provolatile
     }
 
     public boolean isCompatibleWithReturnType(PostgresDataType t) {

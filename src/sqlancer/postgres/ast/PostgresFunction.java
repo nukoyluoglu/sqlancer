@@ -33,6 +33,7 @@ public class PostgresFunction implements PostgresExpression {
     }
 
     public enum PostgresFunctionWithResult {
+        // ADD VOLATILITY INFO
         ABS(1, "abs") {
 
             @Override
@@ -237,6 +238,8 @@ public class PostgresFunction implements PostgresExpression {
             this.nrArgs = nrArgs;
             this.functionName = functionName;
             this.variadic = false;
+            // volatile or not add 
+            // make set smaller
         }
 
         PostgresFunctionWithResult(int nrArgs, String functionName, boolean variadic) {

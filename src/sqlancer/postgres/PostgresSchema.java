@@ -46,8 +46,18 @@ public class PostgresSchema {
 
     public static class PostgresColumn extends AbstractTableColumn<PostgresTable, PostgresDataType> {
 
+        private String defaultValue;
+        
         public PostgresColumn(String name, PostgresDataType columnType) {
             super(name, null, columnType);
+        }
+
+        public void setDefault(String defaultValue) {
+            this.defaultValue = defaultValue;
+        }
+
+        public String getDefault() {
+            return this.defaultValue;
         }
 
     }
@@ -229,6 +239,16 @@ public class PostgresSchema {
             return this.distributionColumn;
         }
 
+        public List<PostgresColumn> getColumnsWithDefaultValues() {
+            List<PostgresColumn> columnsWithDefaultValues = new ArrayList<>();
+            for (PostgresColumn c : getColumns()) {
+                if (c.getDefault() != null) {
+                    columnsWithDefaultValues.add(c);
+                }
+            }
+            return columnsWithDefaultValues;
+        }
+
     }
 
     public static final class PostgresStatisticsObject {
@@ -350,12 +370,16 @@ public class PostgresSchema {
         List<PostgresColumn> columns = new ArrayList<>();
         try (Statement s = con.createStatement()) {
             try (ResultSet rs = s
-                    .executeQuery("select column_name, data_type from INFORMATION_SCHEMA.COLUMNS where table_name = '"
+                    .executeQuery("select column_name, data_type, column_default from INFORMATION_SCHEMA.COLUMNS where table_name = '"
                             + tableName + "'")) {
                 while (rs.next()) {
                     String columnName = rs.getString("column_name");
                     String dataType = rs.getString("data_type");
+                    String columnDefault = rs.getString("column_default");
                     PostgresColumn c = new PostgresColumn(columnName, getColumnType(dataType));
+                    if (columnDefault != null && !columnDefault.equals("")) {
+                        c.setDefault(columnDefault);
+                    }
                     columns.add(c);
                 }
             }
