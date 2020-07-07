@@ -3,6 +3,8 @@ package sqlancer.postgres.gen;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.function.Function;
+import java.util.Set;
+import java.util.HashSet;
 
 import sqlancer.Query;
 import sqlancer.QueryAdapter;
@@ -131,6 +133,9 @@ public final class PostgresSetGenerator {
     }
 
     public static Query create(PostgresGlobalState globalState) {
+        Set<String> errors = new HashSet<>();
+        // for queries not supported by Citus
+        PostgresCommon.addCitusErrors(errors);
         StringBuilder sb = new StringBuilder();
         ArrayList<ConfigurationOption> options = new ArrayList<>(Arrays.asList(ConfigurationOption.values()));
         options.remove(ConfigurationOption.DEFAULT_WITH_OIDS);
@@ -147,7 +152,7 @@ public final class PostgresSetGenerator {
         } else {
             sb.append(option.op.apply(globalState.getRandomly()));
         }
-        return new QueryAdapter(sb.toString());
+        return new QueryAdapter(sb.toString(), errors);
     }
 
 }
