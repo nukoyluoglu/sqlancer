@@ -26,6 +26,8 @@ public final class PostgresInsertGenerator {
         PostgresCommon.addCommonExpressionErrors(errors);
         PostgresCommon.addCommonInsertUpdateErrors(errors);
         PostgresCommon.addCommonExpressionErrors(errors);
+        // for queries not supported by Citus
+        PostgresCommon.addCitusErrors(errors);
         errors.add("multiple assignments to same column");
         errors.add("violates foreign key constraint");
         errors.add("value too long for type character varying");
@@ -45,6 +47,7 @@ public final class PostgresInsertGenerator {
         PostgresColumn distributionColumn = table.getDistributionColumn();
         // check if table is distributed
         if (distributionColumn != null) {
+            // TODO: even if dist col has default value does not work
             boolean distributionColumnHasDefaultValue = table.getColumnsWithDefaultValues().stream().anyMatch(c -> c.getName().equals(distributionColumn.getName()));
             // check if distribution column does not have default value
             if (! distributionColumnHasDefaultValue) {
@@ -76,20 +79,19 @@ public final class PostgresInsertGenerator {
                 if (i != 0) {
                     sbRowValue.append(", ");
                 }
-                if (table.getDistributionColumn() != null && columns.get(i).getName().equals(table.getDistributionColumn().getName())) {
-                    // INSERT cannot be performed with NULL in the partition column on a distributed table
-                    String valueToInsert;
-                    do {
-                        valueToInsert = PostgresVisitor.asString(PostgresExpressionGenerator
-                .generateConstant(globalState.getRandomly(), columns.get(i).getType()));
-                    } while (valueToInsert.contains("NULL") || valueToInsert.contains("null"));
-                    // TODO: try using constant values for partition column
-                    errors.add("failed to evaluate partition key in insert");
-                    sbRowValue.append(valueToInsert);
-                } else {
+                // distribution column cannot contian null value
+                // if (table.getDistributionColumn() != null && columns.get(i).getName().equals(table.getDistributionColumn().getName())) {
+                //     // INSERT cannot be performed with NULL in the partition column on a distributed table
+                //     String valueToInsert;
+                //     do {
+                //         valueToInsert = PostgresVisitor.asString(PostgresExpressionGenerator
+                // .generateConstant(globalState.getRandomly(), columns.get(i).getType()));
+                //     } while (valueToInsert.contains("NULL") || valueToInsert.contains("null"));
+                //     sbRowValue.append(valueToInsert);
+                // } else {
                     sbRowValue.append(PostgresVisitor.asString(PostgresExpressionGenerator
                         .generateConstant(globalState.getRandomly(), columns.get(i).getType())));
-                }
+                // }
             }
             sbRowValue.append(")");
 

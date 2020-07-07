@@ -89,6 +89,8 @@ public final class PostgresViewGenerator {
         errors.add("non-integer constant in DISTINCT ON");
         errors.add("SELECT DISTINCT ON expressions must match initial ORDER BY expressions");
         PostgresCommon.addCommonExpressionErrors(errors);
+        // for queries not supported by Citus
+        PostgresCommon.addCitusErrors(errors);
         return new QueryAdapter(sb.toString(), errors, true);
     }
 

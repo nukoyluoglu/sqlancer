@@ -74,14 +74,13 @@ public final class PostgresUpdateGenerator {
         errors.add("could not determine which collation to use for string comparison");
         errors.add("but expression is of type");
         PostgresCommon.addCommonExpressionErrors(errors);
+        // for queries not supported by Citus
+        PostgresCommon.addCitusErrors(errors);
         if (!Randomly.getBooleanWithSmallProbability()) {
             sb.append(" WHERE ");
             // functions used in UPDATE queries on distributed tables must not be VOLATILE
             // STABLE functions used in UPDATE queries cannot be called with column references
-            globalState.setAllowedFunctionTypes(Arrays.asList('i'));
-            // TODO: new errors?
-            errors.add("must not be VOLATILE");
-            errors.add("STABLE functions");
+            globalState.setAllowedFunctionTypes(Arrays.asList('s','i'));
             PostgresExpression where = PostgresExpressionGenerator.generateExpression(globalState,
                     randomTable.getColumns(), PostgresDataType.BOOLEAN);
             globalState.setDefaultAllowedFunctionTypes();

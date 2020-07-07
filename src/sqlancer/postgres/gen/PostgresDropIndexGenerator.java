@@ -22,6 +22,7 @@ public final class PostgresDropIndexGenerator {
         StringBuilder sb = new StringBuilder();
         sb.append("DROP INDEX ");
         int numberofIndicesToDrop = Randomly.smallNumber() + 1;
+        // cannot drop multiple distributed objects in a single command
         if (randomTable.getDistributionColumn() != null) {
             numberofIndicesToDrop = 1;
         }

@@ -36,15 +36,14 @@ public final class PostgresDeleteGenerator {
         }
         if (Randomly.getBoolean()) {
             sb.append(" RETURNING ");
-            // non-IMMUTABLE functions cannot be used in RETURNING clauses on distributed tables
             globalState.setAllowedFunctionTypes(Arrays.asList('i'));
-            // TODO: new errors?
-            errors.add("non-IMMUTABLE functions");
             sb.append(PostgresVisitor
                     .asString(PostgresExpressionGenerator.generateExpression(globalState, table.getColumns())));
             globalState.setDefaultAllowedFunctionTypes();
         }
         PostgresCommon.addCommonExpressionErrors(errors);
+        // for queries not supported by Citus
+        PostgresCommon.addCitusErrors(errors);
         errors.add("out of range");
         errors.add("cannot cast");
         errors.add("invalid input syntax for");

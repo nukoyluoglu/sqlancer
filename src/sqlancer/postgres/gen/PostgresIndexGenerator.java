@@ -140,6 +140,8 @@ public final class PostgresIndexGenerator {
         errors.add("functions in index expression must be marked IMMUTABLE");
         errors.add("result of range difference would not be contiguous");
         PostgresCommon.addCommonExpressionErrors(errors);
+        // for queries not supported by Citus
+        PostgresCommon.addCitusErrors(errors);
         return new QueryAdapter(sb.toString(), errors);
     }
 

@@ -84,6 +84,8 @@ public class PostgresAlterTableGenerator {
         PostgresCommon.addCommonExpressionErrors(errors);
         PostgresCommon.addCommonInsertUpdateErrors(errors);
         PostgresCommon.addCommonTableErrors(errors);
+        // for queries not supported by Citus
+        PostgresCommon.addCitusErrors(errors);
         errors.add("cannot drop desired object(s) because other objects depend on them");
         errors.add("invalid input syntax for");
         errors.add("it has pending trigger events");
@@ -107,10 +109,12 @@ public class PostgresAlterTableGenerator {
         sb.append(" ");
         int i = 0;
         List<Action> action;
+        // TODO: decide whether to keep or not
         // 1 subcommand per ALTER TABLE command if table is distributed
-        if (randomTable.getDistributionColumn() != null) {
-            action = Randomly.subset(1, Action.values());
-        } else if (Randomly.getBoolean()) {
+        // if (randomTable.getDistributionColumn() != null) {
+        //     action = Randomly.subset(1, Action.values());
+        // } else 
+        if (Randomly.getBoolean()) {
             action = Randomly.nonEmptySubset(Action.values());
         } else {
             // make it more likely that the ALTER TABLE succeeds
@@ -164,9 +168,7 @@ public class PostgresAlterTableGenerator {
                 errors.add("cannot drop inherited column");
                 break;
             case ALTER_COLUMN_TYPE:
-                if (!alterColumn(randomTable, sb, false)) {
-                    break;
-                }
+                alterColumn(randomTable, sb);
                 if (Randomly.getBoolean()) {
                     sb.append(" SET DATA");
                 }
@@ -200,9 +202,7 @@ public class PostgresAlterTableGenerator {
                 errors.add("cannot alter type of a column used by a generated column");
                 break; 
             case ALTER_COLUMN_SET_DROP_DEFAULT:
-                if (!alterColumn(randomTable, sb, false)) {
-                    break;
-                }
+                alterColumn(randomTable, sb);
                 if (Randomly.getBoolean()) {
                     sb.append("DROP DEFAULT");
                 } else {
@@ -217,16 +217,11 @@ public class PostgresAlterTableGenerator {
                 errors.add("is an identity column");
                 break;
             case ALTER_COLUMN_SET_DROP_NULL:
+                alterColumn(randomTable, sb);
                 if (Randomly.getBoolean()) {
-                    if (!alterColumn(randomTable, sb, true)) {
-                        break;
-                    }
                     sb.append("SET NOT NULL");
                     errors.add("contains null values");
                 } else {
-                    if (!alterColumn(randomTable, sb, false)) {
-                        break;
-                    }
                     sb.append("DROP NOT NULL");
                     errors.add("is in a primary key");
                     errors.add("is an identity column");
@@ -399,19 +394,21 @@ public class PostgresAlterTableGenerator {
         return new QueryAdapter(sb.toString(), errors, true);
     }
 
-    private static boolean alterColumn(PostgresTable randomTable, StringBuilder sb, boolean allowDistributionColumn) {
-        List<PostgresColumn> columns = new ArrayList<>(randomTable.getColumns());
+    private static void alterColumn(PostgresTable randomTable, StringBuilder sb) {
+        // TODO: get rid of this?
+        /* List<PostgresColumn> columns = new ArrayList<>(randomTable.getColumns());
         if (randomTable.getDistributionColumn() != null && !allowDistributionColumn) {
             columns.removeIf(c -> c.getName().equals(randomTable.getDistributionColumn().getName()));
         }
         if (columns.isEmpty()) {
             return false;
-        }
+        } */
         sb.append("ALTER ");
-        randomColumn = Randomly.fromList(columns);
+        // randomColumn = Randomly.fromList(columns);
+        randomColumn = randomTable.getRandomColumn();
         sb.append(randomColumn.getName());
         sb.append(" ");
-        return true;
+        // return true;
     }
 
 }

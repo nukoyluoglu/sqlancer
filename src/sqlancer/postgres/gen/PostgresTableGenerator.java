@@ -55,6 +55,8 @@ public class PostgresTableGenerator {
         errors.add("has pseudo-type unknown");
         PostgresCommon.addCommonExpressionErrors(errors);
         PostgresCommon.addCommonTableErrors(errors);
+        // for queries not supported by Citus
+        PostgresCommon.addCitusErrors(errors);
     }
 
     public static Query generate(String tableName, PostgresSchema newSchema, boolean generateOnlyKnown,
@@ -174,6 +176,8 @@ public class PostgresTableGenerator {
         errors.add("does not accept data type");
         int n = partitionOption.contentEquals("LIST") ? 1 : Randomly.smallNumber() + 1;
         PostgresCommon.addCommonExpressionErrors(errors);
+        // for queries not supported by Citus
+        PostgresCommon.addCitusErrors(errors);
         for (int i = 0; i < n; i++) {
             if (i != 0) {
                 sb.append(", ");
@@ -267,19 +271,20 @@ public class PostgresTableGenerator {
                 break;
             case GENERATED:
                 sb.append("GENERATED ");
-                if (Randomly.getBoolean()) {
-                    sb.append(" ALWAYS AS (");
-                    sb.append(PostgresVisitor.asString(
-                            PostgresExpressionGenerator.generateExpression(globalState, columnsToBeAdded, type)));
-                    sb.append(") STORED");
-                    errors.add("A generated column cannot reference another generated column.");
-                    errors.add("cannot use generated column in partition key");
-                    errors.add("generation expression is not immutable");
-                    errors.add("cannot use column reference in DEFAULT expression");
+                // if (Randomly.getBoolean()) {
+                sb.append(" ALWAYS AS (");
+                sb.append(PostgresVisitor.asString(
+                        PostgresExpressionGenerator.generateExpression(globalState, columnsToBeAdded, type)));
+                sb.append(") STORED");
+                errors.add("A generated column cannot reference another generated column.");
+                errors.add("cannot use generated column in partition key");
+                errors.add("generation expression is not immutable");
+                errors.add("cannot use column reference in DEFAULT expression");
+                /* not supported by citus
                 } else {
                     sb.append(Randomly.fromOptions("ALWAYS", "BY DEFAULT"));
                     sb.append(" AS IDENTITY");
-                }
+                } */
                 break;
             default:
                 throw new AssertionError(sb);
