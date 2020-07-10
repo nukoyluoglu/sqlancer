@@ -326,13 +326,15 @@ public final class PostgresProvider extends ProviderAdapter<PostgresGlobalState,
                 globalState.getState().statements.add(query);
                 String template = "SELECT create_reference_table(?);";
                 List<String> fills = Arrays.asList(table.getName());
-                query.fillAndExecute(con, template, fills);
+                // TODO: get rid of con dependence
+                query.fillAndExecute(globalState.getConnection(), template, fills);
             } else {
                 // create distributed table
-                createDistributedTable(table.getName(), globalState, con);
+                createDistributedTable(table.getName(), globalState, globalState.getConnection());
             }
         }
-        globalState.setSchema(PostgresSchema.fromConnection(con, databaseName));
+        // globalState.setSchema(PostgresSchema.fromConnection(globalState.getConnection(), globalState.getDatabaseName());
+        globalState.updateSchema();
 
         StatementExecutor<PostgresGlobalState, Action> se = new StatementExecutor<>(globalState, Action.values(),
                 PostgresProvider::mapActions, (q) -> {
