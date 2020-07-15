@@ -303,7 +303,7 @@ public final class PostgresProvider extends ProviderAdapter<PostgresGlobalState,
             globalState.addFunctionAndType(functionName, functionType);
         }
 
-        while (globalState.getSchema().getDatabaseTables().size() < Randomly.fromOptions(1, 2)) {
+        while (globalState.getSchema().getDatabaseTables().size() < Randomly.fromOptions(4, 5, 6)) {
             try {
                 String tableName = SQLite3Common.createTableName(globalState.getSchema().getDatabaseTables().size());
                 Query createTable = PostgresTableGenerator.generate(tableName, globalState.getSchema(),

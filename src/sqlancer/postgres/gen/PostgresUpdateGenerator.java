@@ -40,8 +40,8 @@ public final class PostgresUpdateGenerator {
 
         // UPDATE must not include partition column if table is distributed
         if (randomTable.getDistributionColumn() != null) {
-            // remove column whose name equals to name of distribution column
-            columns.removeIf(c -> (c.getName()).equals(randomTable.getDistributionColumn().getName()));
+            // remove distribution column
+            columns.removeIf(c -> c.equals(randomTable.getDistributionColumn()));
         }
         if (columns.isEmpty()) {
             throw new IgnoreMeException();

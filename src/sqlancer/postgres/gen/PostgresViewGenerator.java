@@ -2,6 +2,8 @@ package sqlancer.postgres.gen;
 
 import java.util.HashSet;
 import java.util.Set;
+import java.util.List;
+import java.util.ArrayList;
 
 import sqlancer.Query;
 import sqlancer.QueryAdapter;
@@ -10,6 +12,8 @@ import sqlancer.postgres.PostgresGlobalState;
 import sqlancer.postgres.PostgresVisitor;
 import sqlancer.postgres.ast.PostgresSelect;
 import sqlancer.sqlite3.gen.SQLite3Common;
+import sqlancer.postgres.PostgresSchema.PostgresTable;
+import sqlancer.postgres.PostgresSchema.PostgresTables;
 
 public final class PostgresViewGenerator {
 
@@ -67,7 +71,15 @@ public final class PostgresViewGenerator {
         // sb.append(")");
         // }
         sb.append(" AS (");
-        PostgresSelect select = PostgresRandomQueryGenerator.createRandomQuery(nrColumns, globalState);
+        List<PostgresTable> allTables = globalState.getSchema().getDatabaseTables();
+        List<PostgresTable> localTables = new ArrayList<>();
+        for (PostgresTable table : allTables) {
+            if (table.getColocationId() == null) {
+                localTables.add(table);
+            }
+        }
+        PostgresTables tables = new PostgresTables(localTables);
+        PostgresSelect select = PostgresRandomQueryGenerator.createRandomQueryOnTables(nrColumns, globalState, tables);
         sb.append(PostgresVisitor.asString(select));
         sb.append(")");
         if (Randomly.getBoolean() && !materialized && !recursive) {

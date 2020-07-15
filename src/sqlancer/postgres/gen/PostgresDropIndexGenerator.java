@@ -27,6 +27,8 @@ public final class PostgresDropIndexGenerator {
             numberofIndicesToDrop = 1;
         }
         if (Randomly.getBoolean() || indexes.isEmpty()) {
+            // index might be on distributed relation
+            numberofIndicesToDrop = 1;
             sb.append("IF EXISTS ");
             for (int i = 0; i < numberofIndicesToDrop; i++) {
                 if (i != 0) {

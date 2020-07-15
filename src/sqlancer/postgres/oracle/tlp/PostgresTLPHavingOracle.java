@@ -3,6 +3,7 @@ package sqlancer.postgres.oracle.tlp;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Arrays;
 
 import sqlancer.ComparatorHelper;
 import sqlancer.Randomly;
@@ -21,9 +22,15 @@ public class PostgresTLPHavingOracle extends PostgresTLPBase {
 
     @Override
     public void check() throws SQLException {
+        // don't use immutable functions in SELECT queries
+        state.setAllowedFunctionTypes(Arrays.asList('i'));
         super.check();
+        // TODO: add WHERE clause for dist column hardcoding
         if (Randomly.getBoolean()) {
-            select.setWhereClause(gen.generateExpression(PostgresDataType.BOOLEAN));
+            select.setWhereClause(gen.generateExpression(PostgresDataType.BOOLEAN)); 
+        }
+        if (Randomly.getBooleanWithRatherLowProbability()) {
+            super.whereJoin();
         }
         select.setGroupByExpressions(gen.generateExpressions(Randomly.smallNumber() + 1));
         select.setHavingClause(null);
@@ -34,6 +41,7 @@ public class PostgresTLPHavingOracle extends PostgresTLPBase {
         if (orderBy) {
             select.setOrderByExpressions(gen.generateOrderBy());
         }
+        state.setDefaultAllowedFunctionTypes();
         select.setHavingClause(predicate);
         String firstQueryString = PostgresVisitor.asString(select);
         select.setHavingClause(negatedPredicate);

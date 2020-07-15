@@ -4,6 +4,7 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Arrays;
 
 import sqlancer.ComparatorHelper;
 import sqlancer.Randomly;
@@ -18,10 +19,13 @@ public class PostgresTLPWhereOracle extends PostgresTLPBase {
 
     @Override
     public void check() throws SQLException {
+        // don't use immutable functions in SELECT queries
+        state.setAllowedFunctionTypes(Arrays.asList('i'));
         super.check();
         if (Randomly.getBooleanWithRatherLowProbability()) {
             select.setOrderByExpressions(gen.generateOrderBy());
         }
+        state.setDefaultAllowedFunctionTypes();
         String originalQueryString = PostgresVisitor.asString(select);
         List<String> resultSet = ComparatorHelper.getResultSetFirstColumnAsString(originalQueryString, errors, state);
 

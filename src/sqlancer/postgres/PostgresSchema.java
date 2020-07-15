@@ -207,9 +207,10 @@ public class PostgresSchema {
         }
 
         private final TableType tableType;
+        private PostgresColumn distributionColumn = null;
+        private Integer colocationId = null;
         private final List<PostgresStatisticsObject> statistics;
         private final boolean isInsertable;
-        private PostgresColumn distributionColumn = null;
 
         public PostgresTable(String tableName, List<PostgresColumn> columns, List<PostgresIndex> indexes,
                 TableType tableType, List<PostgresStatisticsObject> statistics, boolean isView, boolean isInsertable) {
@@ -231,12 +232,20 @@ public class PostgresSchema {
             return isInsertable;
         }
 
-        public void setDistributionColumn(String distributionColumnName) {
-            this.distributionColumn = new PostgresColumn(distributionColumnName, null);
+        public void setDistributionColumn(PostgresColumn distributionColumn) {
+            this.distributionColumn = distributionColumn;
+        }
+
+        public void setColocationId(Integer colocationId) {
+            this.colocationId = colocationId;
         }
 
         public PostgresColumn getDistributionColumn() {
             return this.distributionColumn;
+        }
+
+        public Integer getColocationId() {
+            return this.colocationId;
         }
 
         public List<PostgresColumn> getColumnsWithDefaultValues() {
@@ -290,12 +299,16 @@ public class PostgresSchema {
             List<PostgresTable> databaseTables = new ArrayList<>();
             try (Statement s = con.createStatement()) {
                 try (ResultSet rs = s.executeQuery(
-                        "SELECT table_name, table_schema, table_type, is_insertable_into, column_to_column_name(logicalrelid, partkey) AS dist_col_name FROM information_schema.tables LEFT OUTER JOIN pg_dist_partition ON logicalrelid=table_name::regclass WHERE table_schema='public' OR table_schema LIKE 'pg_temp_%';")) {
+                        "SELECT table_name, table_schema, table_type, is_insertable_into, column_to_column_name(logicalrelid, partkey) AS dist_col_name, colocationid FROM information_schema.tables LEFT OUTER JOIN pg_dist_partition ON logicalrelid=table_name::regclass WHERE table_schema='public' OR table_schema LIKE 'pg_temp_%';")) {
                     while (rs.next()) {
                         String tableName = rs.getString("table_name");
                         String tableTypeSchema = rs.getString("table_schema");
                         boolean isInsertable = rs.getBoolean("is_insertable_into");
-                        String distributionColumn = rs.getString("dist_col_name");
+                        String distributionColumnName = rs.getString("dist_col_name");
+                        Integer colocationId = rs.getInt("colocationid");
+                        if (rs.wasNull()) {
+                            colocationId = null;
+                        }
                         // TODO: also check insertable
                         // TODO: insert into view?
                         boolean isView = tableName.startsWith("v"); // tableTypeStr.contains("VIEW") ||
@@ -307,8 +320,12 @@ public class PostgresSchema {
                         List<PostgresStatisticsObject> statistics = getStatistics(con);
                         PostgresTable t = new PostgresTable(tableName, databaseColumns, indexes, tableType, statistics,
                                 isView, isInsertable);
-                        if (distributionColumn != null && !distributionColumn.equals("")) {
+                        if (distributionColumnName != null && !distributionColumnName.equals("")) {
+                            PostgresColumn distributionColumn = databaseColumns.stream().filter(c -> c.getName().equals(distributionColumnName)).collect(Collectors.toList()).get(0);
                             t.setDistributionColumn(distributionColumn);
+                        }
+                        if (colocationId != null) {
+                            t.setColocationId(colocationId);
                         }
                         for (PostgresColumn c : databaseColumns) {
                             c.setTable(t);

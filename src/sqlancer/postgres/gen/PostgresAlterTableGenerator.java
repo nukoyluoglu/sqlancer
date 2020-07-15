@@ -148,7 +148,7 @@ public class PostgresAlterTableGenerator {
             case ALTER_TABLE_DROP_COLUMN:
                 List<PostgresColumn> columns = new ArrayList<>(randomTable.getColumns());
                 if (randomTable.getDistributionColumn() != null) {
-                    columns.removeIf(c -> c.getName().equals(randomTable.getDistributionColumn().getName()));
+                    columns.removeIf(c -> c.equals(randomTable.getDistributionColumn()));
                 }
                 if (columns.isEmpty()) {
                     break;

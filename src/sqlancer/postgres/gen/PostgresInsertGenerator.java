@@ -48,17 +48,13 @@ public final class PostgresInsertGenerator {
         // check if table is distributed
         if (distributionColumn != null) {
             // TODO: even if dist col has default value does not work
-            boolean distributionColumnHasDefaultValue = table.getColumnsWithDefaultValues().stream().anyMatch(c -> c.getName().equals(distributionColumn.getName()));
+            boolean distributionColumnHasDefaultValue = table.getColumnsWithDefaultValues().stream().anyMatch(c -> c.equals(distributionColumn));
             // check if distribution column does not have default value
             if (! distributionColumnHasDefaultValue) {
-                boolean distributionColumnIncluded = columns.stream().anyMatch(c -> c.getName().equals(distributionColumn.getName()));
+                boolean distributionColumnIncluded = columns.stream().anyMatch(c -> c.equals(distributionColumn));
                 // check if query does not include distribution column
                 if (! distributionColumnIncluded) {
-                    for (PostgresColumn c : table.getColumns()) {
-                        if (c.getName().equals(distributionColumn.getName())) {
-                            columns.add(c);
-                       }
-                    }
+                    columns.add(distributionColumn);
                 }
             }
         }
@@ -80,7 +76,7 @@ public final class PostgresInsertGenerator {
                     sbRowValue.append(", ");
                 }
                 // distribution column cannot contian null value
-                // if (table.getDistributionColumn() != null && columns.get(i).getName().equals(table.getDistributionColumn().getName())) {
+                // if (table.getDistributionColumn() != null && columns.get(i).equals(table.getDistributionColumn())) {
                 //     // INSERT cannot be performed with NULL in the partition column on a distributed table
                 //     String valueToInsert;
                 //     do {
@@ -142,7 +138,7 @@ public final class PostgresInsertGenerator {
             }
             if (!Randomly.getBooleanWithSmallProbability() || !canBeDefault) {
                 PostgresExpression generateConstant;
-                if (table.getDistributionColumn() != null && columns.get(i).getName().equals(table.getDistributionColumn().getName())) {
+                if (table.getDistributionColumn() != null && columns.get(i).equals(table.getDistributionColumn())) {
                     // INSERT cannot be performed with NULL in the partition column on a distributed table
                     String valueToInsert;
                     do {

@@ -87,6 +87,7 @@ public class PostgresTLPAggregateOracle extends PostgresTLPBase implements TestO
     private String createMetamorphicUnionQuery(PostgresSelect select, PostgresAggregate aggregate,
             List<PostgresExpression> from) {
         String metamorphicQuery;
+        // TODO: set where clause with distribution column
         PostgresExpression whereClause = gen.generateExpression(PostgresDataType.BOOLEAN);
         PostgresExpression negatedClause = new PostgresPrefixOperation(whereClause, PrefixOperator.NOT);
         PostgresExpression notNullClause = new PostgresPostfixOperation(whereClause, PostfixOperator.IS_NULL);

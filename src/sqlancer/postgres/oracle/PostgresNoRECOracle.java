@@ -96,7 +96,7 @@ public class PostgresNoRECOracle implements TestOracle {
             List<PostgresTable> tables) {
         List<PostgresJoin> joinStatements = new ArrayList<>();
         PostgresExpressionGenerator gen = new PostgresExpressionGenerator(globalState).setColumns(columns);
-        for (int i = 1; i < tables.size(); i++) {
+        while (tables.size() > 1) {
             PostgresExpression joinClause = gen.generateExpression(PostgresDataType.BOOLEAN);
             PostgresTable table = Randomly.fromList(tables);
             tables.remove(table);
