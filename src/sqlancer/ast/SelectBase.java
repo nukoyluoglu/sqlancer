@@ -23,9 +23,10 @@ public class SelectBase<T> {
     }
 
     public List<T> getFetchColumns() {
-        if (fetchColumns == null) {
-            throw new IllegalStateException();
-        }
+        // * if null
+        // if (fetchColumns == null) {
+        //     throw new IllegalStateException();
+        // }
         return fetchColumns;
     }
 

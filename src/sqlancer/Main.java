@@ -10,6 +10,7 @@ import java.nio.file.Files;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.SQLFeatureNotSupportedException;
+import java.sql.ResultSet;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -258,6 +259,27 @@ public final class Main {
             boolean success = q.execute(globalState);
             Main.nrSuccessfulActions.addAndGet(1);
             return success;
+        }
+
+        public ResultSet executeAndGet(Query q) throws SQLException {
+            globalState.getState().statements.add(q);
+            ResultSet result = q.executeAndGet(globalState);
+            Main.nrSuccessfulActions.addAndGet(1);
+            return result;
+        }
+
+        public boolean fillAndExecute(Query q, String template, List<String> fills) throws SQLException {
+            globalState.getState().statements.add(q);
+            boolean success = q.fillAndExecute(globalState, template, fills);
+            Main.nrSuccessfulActions.addAndGet(1);
+            return success;
+        }
+
+        public ResultSet fillAndExecuteAndGet(Query q, String template, List<String> fills) throws SQLException {
+            globalState.getState().statements.add(q);
+            ResultSet result = q.fillAndExecuteAndGet(globalState, template, fills);
+            Main.nrSuccessfulActions.addAndGet(1);
+            return result;
         }
 
         public void incrementSelectQueryCount() {

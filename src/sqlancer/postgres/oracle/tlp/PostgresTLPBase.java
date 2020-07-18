@@ -18,19 +18,19 @@ import sqlancer.postgres.PostgresSchema.PostgresTables;
 import sqlancer.postgres.ast.PostgresColumnValue;
 import sqlancer.postgres.ast.PostgresExpression;
 import sqlancer.postgres.ast.PostgresJoin;
-import sqlancer.postgres.ast.PostgresPostfixOperation;
-import sqlancer.postgres.ast.PostgresPostfixOperation.PostfixOperator;
-import sqlancer.postgres.ast.PostgresPrefixOperation;
 import sqlancer.postgres.ast.PostgresSelect;
 import sqlancer.postgres.ast.PostgresSelect.ForClause;
 import sqlancer.postgres.ast.PostgresSelect.PostgresFromTable;
+import sqlancer.postgres.ast.PostgresSelect.PostgresCTE;
 import sqlancer.postgres.gen.PostgresCommon;
+import sqlancer.postgres.ast.PostgresConstant;
 import sqlancer.postgres.gen.PostgresExpressionGenerator;
 import sqlancer.postgres.oracle.PostgresNoRECOracle;
 import sqlancer.postgres.ast.PostgresBinaryComparisonOperation;
 import sqlancer.postgres.ast.PostgresBinaryLogicalOperation;
 import sqlancer.postgres.ast.PostgresJoin.PostgresJoinType;
 import sqlancer.postgres.PostgresSchema.PostgresColumn;
+import sqlancer.postgres.PostgresSchema.PostgresDataType;
 import sqlancer.postgres.ast.PostgresConstant.BooleanConstant;
 
 
@@ -79,7 +79,8 @@ public class PostgresTLPBase extends TernaryLogicPartitioningOracleBase<Postgres
         }
         List<PostgresJoin> joins = null;
         List<PostgresExpression> tableList = null;
-        if (distributedColocationGroups.isEmpty() || (!referenceTables.isEmpty() && !Randomly.getBooleanWithRatherLowProbability())) {
+        if (distributedColocationGroups.isEmpty() || (!referenceTables.isEmpty() && !Randomly.
+            getBooleanWithRatherLowProbability())) {
             if (!localTables.isEmpty()) {
                 // joins including only local tables
                 // supports complex joins
@@ -92,9 +93,8 @@ public class PostgresTLPBase extends TernaryLogicPartitioningOracleBase<Postgres
                 if (!distributedColocationGroups.isEmpty()) {
                     // joins including distributed and reference tables
                     // supports complex joins
-                    for (int colId : distributedColocationGroups.keySet()) {
-                        targetTableList.addAll(distributedColocationGroups.get(colId));
-                    }
+                    int colId = Randomly.fromList(new ArrayList<>(distributedColocationGroups.keySet()));
+                    targetTableList.add(Randomly.fromList(distributedColocationGroups.get(colId)));
                 }
                 targetTables = new PostgresTables(Randomly.nonEmptySubset(targetTableList));
             }
@@ -122,6 +122,10 @@ public class PostgresTLPBase extends TernaryLogicPartitioningOracleBase<Postgres
                 colocated = true;
             }
             joins = getCitusJoinStatements(state, tables, fromTable, colocated);
+            if (Randomly.getBooleanWithRatherLowProbability() && !localTables.isEmpty()) {
+                PostgresJoin joinCTE = getCTEJoinStatement(state, localTables, fromTable);
+                joins.add(joinCTE);
+            }
             tableList = Arrays.asList(new PostgresFromTable(fromTable, Randomly.getBoolean()));
         }
         // TODO joins
@@ -197,7 +201,41 @@ public class PostgresTLPBase extends TernaryLogicPartitioningOracleBase<Postgres
         return joinStatements;
     }
 
+    PostgresJoin getCTEJoinStatement(PostgresGlobalState globalState, List<PostgresTable> CTETables, PostgresTable fromTable) {
+        PostgresTables tables = new PostgresTables(Randomly.nonEmptySubset(localTables));
+        PostgresCTE CTE = createCTE(state, tables);
+        List<PostgresColumn> columns = tables.getColumns();
+        columns.addAll(fromTable.getColumns());
+        PostgresExpressionGenerator gen = new PostgresExpressionGenerator(globalState).setColumns(columns);
+        PostgresExpression joinClause = gen.generateExpression(PostgresDataType.BOOLEAN);
+        PostgresJoinType options = PostgresJoinType.getRandom();
+        return new PostgresJoin(CTE, joinClause, options);
+    }
+
     public void whereJoin() {
+        List<PostgresJoin> joins = select.getJoinClauses();
+        if (!joins.isEmpty()) {
+            List<PostgresExpression> fromList = new ArrayList<>(select.getFromList());
+            PostgresExpression whereClause = select.getWhereClause();
+            if (whereClause == null) {
+                whereClause = new BooleanConstant(true);
+            }
+            List<PostgresJoin> joinToWhere = Randomly.nonEmptySubset(joins);
+            for (PostgresJoin j : joinToWhere) {
+                joins.remove(j);
+                if (j.joinCTE()) {
+                    fromList.add(j.getCTE());
+                } else {
+                    fromList.add(new PostgresFromTable(j.getTable(), Randomly.getBoolean()));
+                }
+                whereClause = new PostgresBinaryLogicalOperation(j.getOnClause(), 
+                    whereClause, PostgresBinaryLogicalOperation.BinaryLogicalOperator.AND);
+            }
+            select.setJoinClauses(joins);
+            select.setFromList(fromList);
+            select.setWhereClause(whereClause);
+        }
+/* 
         select.setJoinClauses(new ArrayList<>());
         List<PostgresTable> tables = targetTables.getTables();
         List<PostgresExpression> tableList = tables.stream().map(t -> new PostgresFromTable(t, Randomly.getBoolean()))
@@ -215,9 +253,39 @@ public class PostgresTLPBase extends TernaryLogicPartitioningOracleBase<Postgres
                     PostgresBinaryComparisonOperation.PostgresBinaryComparisonOperator.EQUALS);
                 whereClause = new PostgresBinaryLogicalOperation(equiWhereClause, 
                     whereClause, PostgresBinaryLogicalOperation.BinaryLogicalOperator.AND);
-            }
-            select.setWhereClause(whereClause);
+            } */
+            // select.setWhereClause(whereClause);
+        // }
+    }
+
+    public static PostgresCTE createCTE(PostgresGlobalState globalState, PostgresTables tables) {
+        PostgresExpressionGenerator gen = new PostgresExpressionGenerator(globalState).setColumns(tables.getColumns());
+        PostgresSelect selectCTE = new PostgresSelect();
+        selectCTE.setFromList(tables.getTables().stream().map(t -> new PostgresFromTable(t, Randomly.getBoolean()))
+                .collect(Collectors.toList()));
+        if (Randomly.getBoolean()) {
+            selectCTE.setWhereClause(gen.generateExpression(0, PostgresDataType.BOOLEAN));
         }
+        if (Randomly.getBooleanWithRatherLowProbability()) {
+            selectCTE.setGroupByExpressions(gen.generateExpressions(Randomly.smallNumber() + 1));
+            if (Randomly.getBoolean()) {
+                selectCTE.setHavingClause(gen.generateHavingClause());
+            }
+        }
+        if (Randomly.getBooleanWithRatherLowProbability()) {
+            selectCTE.setOrderByExpressions(gen.generateOrderBy());
+        }
+        if (Randomly.getBoolean()) {
+            selectCTE.setLimitClause(PostgresConstant.createIntConstant(Randomly.getPositiveOrZeroNonCachedInteger()));
+            if (Randomly.getBoolean()) {
+                selectCTE.setOffsetClause(
+                        PostgresConstant.createIntConstant(Randomly.getPositiveOrZeroNonCachedInteger()));
+            }
+        }
+        if (Randomly.getBooleanWithRatherLowProbability()) {
+            selectCTE.setForClause(ForClause.getRandom());
+        }
+        return new PostgresCTE(selectCTE, "cte");
     }
 
 }

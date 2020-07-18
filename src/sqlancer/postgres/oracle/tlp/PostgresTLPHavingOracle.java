@@ -32,6 +32,9 @@ public class PostgresTLPHavingOracle extends PostgresTLPBase {
         if (Randomly.getBooleanWithRatherLowProbability()) {
             super.whereJoin();
         }
+        if (select.getFromList().size() == 0) {
+            select.setFromList(select.getFromList());
+        }
         select.setGroupByExpressions(gen.generateExpressions(Randomly.smallNumber() + 1));
         select.setHavingClause(null);
         String originalQueryString = PostgresVisitor.asString(select);

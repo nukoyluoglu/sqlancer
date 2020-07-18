@@ -80,13 +80,9 @@ public final class PostgresCommon {
         errors.add("cannot execute ALTER TABLE command involving partition column");
         errors.add("could not run distributed query with FOR UPDATE/SHARE commands");
         // TODO: remove once fixed
-        errors.add("unrecognized node type: 127");
+        // errors.add("unrecognized node type: 127");
         // TODO: SQLancer error
         errors.add("not a foreign key or check constraint");
-        // TODO: SQLancer error
-        errors.add("is outside the valid range for parameter \"jit_inline_above_cost\"");
-        //TODO: SQLancer error
-        errors.add("is outside the valid range for parameter \"jit_optimize_above_cost\"");
         errors.add("cannot perform an INSERT without a partition column value");
         // TODO: remove once fixed
         errors.add("failed to find conversion function from unknown to text");
@@ -100,6 +96,17 @@ public final class PostgresCommon {
         errors.add("unrecognized configuration parameter \"enable_hashagg_disk\"");
         // TODO: remove after PostgreSQL 13 upgrade
         errors.add("unrecognized configuration parameter \"enable_groupingsets_hash_disk\"");
+        errors.add("is not a regular, foreign or partitioned table");
+        errors.add("complex joins are only supported when all distributed tables are co-located and joined on their distribution columns");
+        errors.add("complex joins are only supported when all distributed tables are joined on their distribution columns with equal operator");
+        errors.add("the query contains a join that requires repartitioning");
+        errors.add("cannot perform distributed planning on this query");
+        // SQLancer error
+        errors.add("non-integer constant in GROUP BY");
+        // SQLancer error
+        errors.add("must appear in the GROUP BY clause or be used in an aggregate function");
+        // SQLancer error
+        errors.add("GROUP BY position");
     }
 
     private static void addToCharFunctionErrors(Set<String> errors) {

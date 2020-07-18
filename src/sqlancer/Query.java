@@ -3,6 +3,7 @@ package sqlancer;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.Collection;
+import java.util.List;
 
 public abstract class Query {
 
@@ -25,6 +26,8 @@ public abstract class Query {
      */
     public abstract boolean execute(GlobalState<?, ?> globalState) throws SQLException;
 
+    public abstract boolean fillAndExecute(GlobalState<?, ?> globalState, String template, List<String> fills) throws SQLException;
+
     public abstract Collection<String> getExpectedErrors();
 
     @Override
@@ -33,6 +36,10 @@ public abstract class Query {
     }
 
     public ResultSet executeAndGet(GlobalState<?, ?> globalState) throws SQLException {
+        throw new AssertionError();
+    }
+
+    public ResultSet fillAndExecuteAndGet(GlobalState<?, ?> globalState, String template, List<String> fills) throws SQLException {
         throw new AssertionError();
     }
 

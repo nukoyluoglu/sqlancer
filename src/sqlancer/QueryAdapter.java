@@ -1,6 +1,5 @@
 package sqlancer;
 
-import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -120,8 +119,9 @@ public class QueryAdapter extends Query {
         return expectedErrors;
     }
 
-    public boolean fillAndExecute(Connection con, String template, List<String> fills) throws SQLException {
-        try (PreparedStatement s = con.prepareStatement(template)) {
+    @Override
+    public boolean fillAndExecute(GlobalState<?, ?> globalState, String template, List<String> fills) throws SQLException {
+        try (PreparedStatement s = globalState.getConnection().prepareStatement(template)) {
             for (int i = 1; i < fills.size() + 1; i++) {
                 s.setString(i, fills.get(i - 1));
             }
@@ -135,9 +135,10 @@ public class QueryAdapter extends Query {
         }
     }
 
-    public ResultSet fillAndExecuteAndGet(Connection con, String template, List<String> fills) throws SQLException {
+    @Override
+    public ResultSet fillAndExecuteAndGet(GlobalState<?, ?> globalState, String template, List<String> fills) throws SQLException {
         ResultSet result = null;
-        PreparedStatement s = con.prepareStatement(template);
+        PreparedStatement s = globalState.getConnection().prepareStatement(template);
         try {
             for (int i = 1; i < fills.size() + 1; i++) {
                 s.setString(i, fills.get(i - 1));

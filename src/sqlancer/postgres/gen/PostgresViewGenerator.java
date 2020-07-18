@@ -73,13 +73,22 @@ public final class PostgresViewGenerator {
         sb.append(" AS (");
         List<PostgresTable> allTables = globalState.getSchema().getDatabaseTables();
         List<PostgresTable> localTables = new ArrayList<>();
+        List<PostgresTable> distributedAndReferenceTables = new ArrayList<>();
         for (PostgresTable table : allTables) {
             if (table.getColocationId() == null) {
                 localTables.add(table);
+            } else {
+                distributedAndReferenceTables.add(table);
             }
         }
-        PostgresTables tables = new PostgresTables(localTables);
+        PostgresTables tables;
+        if (localTables.isEmpty()) {
+            tables = new PostgresTables(distributedAndReferenceTables);
+        } else {
+            tables = new PostgresTables(localTables);
+        }
         PostgresSelect select = PostgresRandomQueryGenerator.createRandomQueryOnTables(nrColumns, globalState, tables);
+        // PostgresSelect select = PostgresRandomQueryGenerator.createRandomQuery(nrColumns, globalState);
         sb.append(PostgresVisitor.asString(select));
         sb.append(")");
         if (Randomly.getBoolean() && !materialized && !recursive) {

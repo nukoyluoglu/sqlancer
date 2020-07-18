@@ -95,6 +95,7 @@ public class PostgresGlobalState extends GlobalState<PostgresOptions, PostgresSc
 
     protected void updateSchema() throws SQLException {
         setSchema(PostgresSchema.fromConnection(getConnection(), getDatabaseName()));
+    }
 
     public void addFunctionAndType(String functionName, Character functionType) {
         this.functionsAndTypes.put(functionName, functionType);

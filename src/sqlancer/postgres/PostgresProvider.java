@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Set;
 
 import sqlancer.AbstractAction;
 import sqlancer.CompositeTestOracle;
@@ -50,6 +51,7 @@ import sqlancer.postgres.gen.PostgresTruncateGenerator;
 import sqlancer.postgres.gen.PostgresUpdateGenerator;
 import sqlancer.postgres.gen.PostgresVacuumGenerator;
 import sqlancer.postgres.gen.PostgresViewGenerator;
+import sqlancer.postgres.gen.PostgresCommon;
 import sqlancer.sqlite3.gen.SQLite3Common;
 import static sqlancer.postgres.PostgresSchema.getColumnType;
 
@@ -61,8 +63,12 @@ public final class PostgresProvider extends ProviderAdapter<PostgresGlobalState,
 
     private PostgresGlobalState globalState;
 
+    protected final Set<String> errors = new HashSet<>();
+
     public PostgresProvider() {
         super(PostgresGlobalState.class, PostgresOptions.class);
+        // for queries not supported by Citus
+        PostgresCommon.addCitusErrors(errors);
     }
 
     public enum Action implements AbstractAction<PostgresGlobalState> {
@@ -211,27 +217,23 @@ public final class PostgresProvider extends ProviderAdapter<PostgresGlobalState,
         if (columns.size() != 0) {
             PostgresColumn columnToDistribute = Randomly.fromList(columns);
             QueryAdapter query = new QueryAdapter("SELECT create_distributed_table('" + tableName + "', '" + columnToDistribute.getName() + "');");
-            globalState.getState().statements.add(query);
             String template = "SELECT create_distributed_table(?, ?);";
             List<String> fills = Arrays.asList(tableName, columnToDistribute.getName());
-            query.fillAndExecute(con, template, fills);
+            globalState.fillAndExecuteStatement(query, template, fills);
             // distribution column cannot take NULL value
             // TODO: find a way to protect from SQL injection without '' around string input
             query = new QueryAdapter("ALTER TABLE " + tableName + " ALTER COLUMN " + columnToDistribute.getName() + " SET NOT NULL;");
-            globalState.getState().statements.add(query);
-            query.execute(con);
+            globalState.executeStatement(query);
         }
     }
 
     private final List<String> getTableConstraints(String tableName, PostgresGlobalState globalState, Connection con) throws SQLException {
         List<String> constraints = new ArrayList<>();
         QueryAdapter query = new QueryAdapter("SELECT constraint_type FROM information_schema.table_constraints WHERE table_name = '" + tableName + "' AND (constraint_type = 'PRIMARY KEY' OR constraint_type = 'UNIQUE' or constraint_type = 'EXCLUDE');");
-        // TODO: decide whether to log
-        // globalState.getState().statements.add(query);
         String template = "SELECT constraint_type FROM information_schema.table_constraints WHERE table_name = ? AND (constraint_type = 'PRIMARY KEY' OR constraint_type = 'UNIQUE' or constraint_type = 'EXCLUDE');";
         List<String> fills = new ArrayList<>();
         fills.add(tableName);
-        ResultSet rs = query.fillAndExecuteAndGet(con, template, fills);
+        ResultSet rs = query.fillAndExecuteAndGet(globalState, template, fills);
         while (rs.next()) {
             constraints.add(rs.getString("constraint_type"));
         }
@@ -244,11 +246,9 @@ public final class PostgresProvider extends ProviderAdapter<PostgresGlobalState,
         List<String> tableConstraints = getTableConstraints(tableName, globalState, con);
         if (tableConstraints.size() == 0) {
             QueryAdapter query = new QueryAdapter("SELECT column_name, data_type FROM information_schema.columns WHERE table_name = '" + tableName + "';");
-            // TODO: decide whether to log
-            // globalState.getState().statements.add(query);
             String template = "SELECT column_name, data_type FROM information_schema.columns WHERE table_name = ?;";
             List<String> fills = Arrays.asList(tableName);
-            ResultSet rs = query.fillAndExecuteAndGet(con, template, fills);
+            ResultSet rs = query.fillAndExecuteAndGet(globalState, template, fills);
             while (rs.next()) {
                 String columnName = rs.getString("column_name");
                 String dataType = rs.getString("data_type");
@@ -266,7 +266,7 @@ public final class PostgresProvider extends ProviderAdapter<PostgresGlobalState,
             // globalState.getState().statements.add(query);
             String template = "SELECT c.column_name, c.data_type, tc.constraint_type FROM information_schema.table_constraints tc JOIN information_schema.constraint_column_usage AS ccu USING (constraint_schema, constraint_name) JOIN information_schema.columns AS c ON c.table_schema = tc.constraint_schema AND tc.table_name = c.table_name AND ccu.column_name = c.column_name WHERE (constraint_type = 'PRIMARY KEY' OR constraint_type = 'UNIQUE' OR constraint_type = 'EXCLUDE') AND c.table_name = ?;";
             List<String> fills = Arrays.asList(tableName);
-            ResultSet rs = query.fillAndExecuteAndGet(con, template, fills);
+            ResultSet rs = query.fillAndExecuteAndGet(globalState, template, fills);
             while (rs.next()) {
                 String columnName = rs.getString("column_name");
                 String dataType = rs.getString("data_type");
@@ -295,8 +295,7 @@ public final class PostgresProvider extends ProviderAdapter<PostgresGlobalState,
     @Override
     public void generateDatabase(PostgresGlobalState globalState) throws SQLException {
         QueryAdapter query = new QueryAdapter("SELECT proname, provolatile FROM pg_proc;");
-        globalState.getState().statements.add(query);
-        ResultSet rs = query.executeAndGet(con);
+        ResultSet rs = query.executeAndGet(globalState);
         while (rs.next()) {
             String functionName = rs.getString("proname");
             Character functionType = rs.getString("provolatile").charAt(0);
@@ -309,8 +308,6 @@ public final class PostgresProvider extends ProviderAdapter<PostgresGlobalState,
                 Query createTable = PostgresTableGenerator.generate(tableName, globalState.getSchema(),
                         generateOnlyKnown, globalState);
                 globalState.executeStatement(createTable);
-                }
-                globalState.setSchema(PostgresSchema.fromConnection(con, databaseName));
             } catch (IgnoreMeException e) {
 
             }
@@ -323,17 +320,14 @@ public final class PostgresProvider extends ProviderAdapter<PostgresGlobalState,
             } else if (Randomly.getBooleanWithRatherLowProbability()) {
                 // create reference table
                 query = new QueryAdapter("SELECT create_reference_table('" + table.getName() + "');");
-                globalState.getState().statements.add(query);
                 String template = "SELECT create_reference_table(?);";
                 List<String> fills = Arrays.asList(table.getName());
-                // TODO: get rid of con dependence
-                query.fillAndExecute(globalState.getConnection(), template, fills);
+                globalState.fillAndExecuteStatement(query, template, fills);
             } else {
                 // create distributed table
                 createDistributedTable(table.getName(), globalState, globalState.getConnection());
             }
         }
-        // globalState.setSchema(PostgresSchema.fromConnection(globalState.getConnection(), globalState.getDatabaseName());
         globalState.updateSchema();
 
         StatementExecutor<PostgresGlobalState, Action> se = new StatementExecutor<>(globalState, Action.values(),
@@ -342,16 +336,6 @@ public final class PostgresProvider extends ProviderAdapter<PostgresGlobalState,
                         throw new IgnoreMeException();
                     }
                 });
-        // TODO: transactions broke during refactoring
-        // catch (Throwable t) {
-        // if (t.getMessage().contains("current transaction is aborted")) {
-        // manager.execute(new QueryAdapter("ABORT"));
-        // globalState.setSchema(PostgresSchema.fromConnection(con, databaseName));
-        // } else {
-        // System.err.println(query.getQueryString());
-        // throw t;
-        // }
-        // }
         se.executeStatements();
         globalState.executeStatement(new QueryAdapter("COMMIT", true));
         globalState.executeStatement(new QueryAdapter("SET SESSION statement_timeout = 5000;\n"));
@@ -412,7 +396,7 @@ public final class PostgresProvider extends ProviderAdapter<PostgresGlobalState,
                 globalState.getState().statements.add(new QueryAdapter("\\c " + entryDatabaseName));
                 con = DriverManager.getConnection(urlWorkerInitDB, username, password);
                 globalState.getState().statements.add(new QueryAdapter("DROP DATABASE IF EXISTS " + databaseName));
-                createDatabaseCommand = getCreateDatabaseCommand(databaseName, con);
+                createDatabaseCommand = getCreateDatabaseCommand(databaseName, con, globalState);
                 globalState.getState().statements.add(new QueryAdapter(createDatabaseCommand));
                 try (Statement s = con.createStatement()) {
                     s.execute("DROP DATABASE IF EXISTS " + databaseName);
@@ -434,7 +418,6 @@ public final class PostgresProvider extends ProviderAdapter<PostgresGlobalState,
             globalState.getState().statements.add(new QueryAdapter("\\q"));
             globalState.getState().statements.add(new QueryAdapter("psql -p " + coordinatorPort));
             globalState.getState().statements.add(new QueryAdapter("\\c " + databaseName));
-            globalState.getState().statements.add(new QueryAdapter("CREATE EXTENSION citus;"));
             String urlCoordinatorCurDB = "jdbc:postgresql://localhost:" + coordinatorPort + "/" + databaseName;
             con = DriverManager.getConnection(urlCoordinatorCurDB, username, password);
             // add citus extension to database with given databaseName at server hosting coordinator node
@@ -450,17 +433,8 @@ public final class PostgresProvider extends ProviderAdapter<PostgresGlobalState,
                     s.execute("SELECT * from master_add_node('" + w.get_name() + "', " + w.get_port() + ");");
                 }
             }
-            List<String> statements = Arrays.asList(
-                    // "CREATE EXTENSION IF NOT EXISTS btree_gin;",
-                    // "CREATE EXTENSION IF NOT EXISTS btree_gist;", // TODO: undefined symbol: elog_start
-                    "CREATE EXTENSION IF NOT EXISTS pg_prewarm;", "SET max_parallel_workers_per_gather=" + ((PostgresGlobalState)globalState).getDmbsSpecificOptions().max_parallel_workers_per_gather);
-            for (String s : statements) {
-                QueryAdapter query = new QueryAdapter(s);
-                globalState.getState().statements.add(query);
-                query.execute(con);
-            }
-            // new QueryAdapter("set jit_above_cost = 0; set jit_inline_above_cost = 0; set jit_optimize_above_cost =
-            // 0;").execute(con);
+            con.close();
+            con = DriverManager.getConnection(urlCoordinatorCurDB, username, password);
             return con;
         }
     }
