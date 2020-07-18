@@ -35,6 +35,9 @@ public class PostgresOptions {
     @Parameter(names = "--database")
     public String entryDatabaseName = "postgres";
 
+    @Parameter(names= "--repartition")
+    public boolean repartition = true;
+
     public enum PostgresOracle {
         NOREC {
             @Override

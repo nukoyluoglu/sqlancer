@@ -97,10 +97,11 @@ public final class PostgresCommon {
         // TODO: remove after PostgreSQL 13 upgrade
         errors.add("unrecognized configuration parameter \"enable_groupingsets_hash_disk\"");
         errors.add("is not a regular, foreign or partitioned table");
+        errors.add("must be a distributed table or a reference table");
+        // Citus restrictions on SELECT queries
         errors.add("complex joins are only supported when all distributed tables are co-located and joined on their distribution columns");
         errors.add("complex joins are only supported when all distributed tables are joined on their distribution columns with equal operator");
-        errors.add("the query contains a join that requires repartitioning");
-        errors.add("cannot perform distributed planning on this query");
+        // errors.add("cannot perform distributed planning on this query");
         // SQLancer error
         errors.add("non-integer constant in GROUP BY");
         // SQLancer error

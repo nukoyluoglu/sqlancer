@@ -216,13 +216,13 @@ public final class PostgresProvider extends ProviderAdapter<PostgresGlobalState,
     private final void distributeTable(List<PostgresColumn> columns, String tableName, PostgresGlobalState globalState, Connection con) throws SQLException {
         if (columns.size() != 0) {
             PostgresColumn columnToDistribute = Randomly.fromList(columns);
-            QueryAdapter query = new QueryAdapter("SELECT create_distributed_table('" + tableName + "', '" + columnToDistribute.getName() + "');");
+            QueryAdapter query = new QueryAdapter("SELECT create_distributed_table('" + tableName + "', '" + columnToDistribute.getName() + "');", errors);
             String template = "SELECT create_distributed_table(?, ?);";
             List<String> fills = Arrays.asList(tableName, columnToDistribute.getName());
             globalState.fillAndExecuteStatement(query, template, fills);
             // distribution column cannot take NULL value
             // TODO: find a way to protect from SQL injection without '' around string input
-            query = new QueryAdapter("ALTER TABLE " + tableName + " ALTER COLUMN " + columnToDistribute.getName() + " SET NOT NULL;");
+            query = new QueryAdapter("ALTER TABLE " + tableName + " ALTER COLUMN " + columnToDistribute.getName() + " SET NOT NULL;", errors);
             globalState.executeStatement(query);
         }
     }
@@ -277,7 +277,7 @@ public final class PostgresProvider extends ProviderAdapter<PostgresGlobalState,
                     if (columnConstraints.containsKey(c)) {
                         columnConstraints.get(c).add(constraintType);
                     } else {
-                        columnConstraints.put(c, Arrays.asList(constraintType));
+                        columnConstraints.put(c, new ArrayList<>(Arrays.asList(constraintType)));
                     }
                 }  
             }
@@ -319,7 +319,7 @@ public final class PostgresProvider extends ProviderAdapter<PostgresGlobalState,
                 // create local table
             } else if (Randomly.getBooleanWithRatherLowProbability()) {
                 // create reference table
-                query = new QueryAdapter("SELECT create_reference_table('" + table.getName() + "');");
+                query = new QueryAdapter("SELECT create_reference_table('" + table.getName() + "');", errors);
                 String template = "SELECT create_reference_table(?);";
                 List<String> fills = Arrays.asList(table.getName());
                 globalState.fillAndExecuteStatement(query, template, fills);
@@ -339,6 +339,11 @@ public final class PostgresProvider extends ProviderAdapter<PostgresGlobalState,
         se.executeStatements();
         globalState.executeStatement(new QueryAdapter("COMMIT", true));
         globalState.executeStatement(new QueryAdapter("SET SESSION statement_timeout = 5000;\n"));
+        if (globalState.getDmbsSpecificOptions().repartition) {
+            // allow repartition joins
+            globalState.executeStatement(new QueryAdapter("SET citus.enable_repartition_joins to ON;\n", errors));
+        }
+        
     }
 
     @Override
@@ -360,8 +365,8 @@ public final class PostgresProvider extends ProviderAdapter<PostgresGlobalState,
             String databaseName = globalState.getDatabaseName();
             String username = globalState.getOptions().getUserName();
             String password = globalState.getOptions().getPassword();
-            int coordinatorPort = ((PostgresGlobalState)globalState).getDmbsSpecificOptions().coordinatorPort;
-            String entryDatabaseName = ((PostgresGlobalState)globalState).getDmbsSpecificOptions().entryDatabaseName;
+            int coordinatorPort = globalState.getDmbsSpecificOptions().coordinatorPort;
+            String entryDatabaseName = globalState.getDmbsSpecificOptions().entryDatabaseName;
             String urlCoordinatorInitDB = "jdbc:postgresql://localhost:" + coordinatorPort + "/" + entryDatabaseName;
             globalState.getState().statements.add(new QueryAdapter("psql -p " + coordinatorPort));
             globalState.getState().statements.add(new QueryAdapter("\\c " + entryDatabaseName));
@@ -421,6 +426,7 @@ public final class PostgresProvider extends ProviderAdapter<PostgresGlobalState,
             String urlCoordinatorCurDB = "jdbc:postgresql://localhost:" + coordinatorPort + "/" + databaseName;
             con = DriverManager.getConnection(urlCoordinatorCurDB, username, password);
             // add citus extension to database with given databaseName at server hosting coordinator node
+            globalState.getState().statements.add(new QueryAdapter("CREATE EXTENSION citus;"));
             try (Statement s = con.createStatement()) {
                 s.execute("CREATE EXTENSION citus;");
             }
@@ -428,9 +434,9 @@ public final class PostgresProvider extends ProviderAdapter<PostgresGlobalState,
             for (WorkerNode w : workerNodes) {
                 // TODO: protect from sql injection - is it necessary though since these are read from the system?
                 globalState.getState().statements.add(new QueryAdapter("SELECT * from master_add_node('" + w.get_name() + "', " + w.get_port() + ");"));
-                String template = "SELECT * from master_add_node('" + w.get_name() + "', " + w.get_port() + ");";
+                String addWorkers = "SELECT * from master_add_node('" + w.get_name() + "', " + w.get_port() + ");";
                 try (Statement s = con.createStatement()) {
-                    s.execute("SELECT * from master_add_node('" + w.get_name() + "', " + w.get_port() + ");");
+                    s.execute(addWorkers);
                 }
             }
             con.close();

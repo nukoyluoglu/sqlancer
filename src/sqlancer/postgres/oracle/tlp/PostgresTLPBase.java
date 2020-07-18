@@ -41,7 +41,7 @@ public class PostgresTLPBase extends TernaryLogicPartitioningOracleBase<Postgres
     PostgresTables targetTables;
     PostgresExpressionGenerator gen;
     PostgresSelect select;
-    HashMap<Integer, List<PostgresTable>> distributedColocationGroups;
+    HashMap<PostgresTable, Integer> distributedTables;
     List<PostgresTable> referenceTables;
     List<PostgresTable> localTables;
 
@@ -58,7 +58,7 @@ public class PostgresTLPBase extends TernaryLogicPartitioningOracleBase<Postgres
         // clear left-over query string from previous test
         state.getState().queryString = null;
         s = state.getSchema();
-        distributedColocationGroups = new HashMap<>();
+        distributedTables = new HashMap<>();
         referenceTables = new ArrayList<>();
         localTables = new ArrayList<>();
         List<PostgresTable> allTables = s.getDatabaseTables();
@@ -66,11 +66,7 @@ public class PostgresTLPBase extends TernaryLogicPartitioningOracleBase<Postgres
             Integer colocationId = table.getColocationId();
             PostgresColumn distributionColumn = table.getDistributionColumn();
             if (colocationId != null && distributionColumn != null) {
-                if (distributedColocationGroups.containsKey(colocationId)) {
-                    distributedColocationGroups.get(colocationId).add(table);
-                } else {
-                    distributedColocationGroups.put(colocationId, new ArrayList<>(Arrays.asList(table)));
-                }
+                distributedTables.put(table, colocationId);
             } else if (colocationId != null) {
                 referenceTables.add(table);
             } else {
@@ -79,7 +75,7 @@ public class PostgresTLPBase extends TernaryLogicPartitioningOracleBase<Postgres
         }
         List<PostgresJoin> joins = null;
         List<PostgresExpression> tableList = null;
-        if (distributedColocationGroups.isEmpty() || (!referenceTables.isEmpty() && !Randomly.
+        if (distributedTables.isEmpty() || (!referenceTables.isEmpty() && !Randomly.
             getBooleanWithRatherLowProbability())) {
             if (!localTables.isEmpty()) {
                 // joins including only local tables
@@ -90,11 +86,10 @@ public class PostgresTLPBase extends TernaryLogicPartitioningOracleBase<Postgres
                 // joins including reference tables
                 // supports complex joins
                 List<PostgresTable> targetTableList = new ArrayList<>(referenceTables);
-                if (!distributedColocationGroups.isEmpty()) {
+                if (!distributedTables.isEmpty()) {
                     // joins including distributed and reference tables
                     // supports complex joins
-                    int colId = Randomly.fromList(new ArrayList<>(distributedColocationGroups.keySet()));
-                    targetTableList.add(Randomly.fromList(distributedColocationGroups.get(colId)));
+                    targetTableList.add(Randomly.fromList(new ArrayList<>(distributedTables.keySet())));
                 }
                 targetTables = new PostgresTables(Randomly.nonEmptySubset(targetTableList));
             }
@@ -103,25 +98,13 @@ public class PostgresTLPBase extends TernaryLogicPartitioningOracleBase<Postgres
             tableList = tables.stream().map(t -> new PostgresFromTable(t, Randomly.getBoolean()))
                 .collect(Collectors.toList());
         } else {
-            // joins between distributed tables not necessarily colocated
+            // joins between distributed tables
             // join including distribution columns
-            // does not support complex joins
-            List<Integer> colocationIds = Randomly.nonEmptySubset(new ArrayList<>(distributedColocationGroups.keySet()));
-            List<PostgresTable> tables = new ArrayList<>();
-            for (int colId : colocationIds) {
-                tables.addAll(distributedColocationGroups.get(colId));
-            }
-            tables = Randomly.nonEmptySubset(tables);
+            // supports complex joins if colocated
+            List<PostgresTable> tables = Randomly.nonEmptySubset(new ArrayList<>(distributedTables.keySet()));
             targetTables = new PostgresTables(tables);
             PostgresTable fromTable = Randomly.fromList(tables);
-            boolean colocated = false;
-            if (colocationIds.size() == 1) {
-                // joins between colocated distributed tables
-                // equijoin on distribution columns
-                // supports complex joins
-                colocated = true;
-            }
-            joins = getCitusJoinStatements(state, tables, fromTable, colocated);
+            joins = getCitusJoinStatements(state, tables, fromTable);
             if (Randomly.getBooleanWithRatherLowProbability() && !localTables.isEmpty()) {
                 PostgresJoin joinCTE = getCTEJoinStatement(state, localTables, fromTable);
                 joins.add(joinCTE);
@@ -156,7 +139,7 @@ public class PostgresTLPBase extends TernaryLogicPartitioningOracleBase<Postgres
     }
 
     List<PostgresJoin> getCitusJoinStatements(PostgresGlobalState globalState, 
-        List<PostgresTable> joinTables, PostgresTable fromTable, boolean colocated) {
+        List<PostgresTable> joinTables, PostgresTable fromTable) {
         List<PostgresColumn> columns = new ArrayList<>();
         for (PostgresTable t : joinTables) {
             columns.add(t.getDistributionColumn());
@@ -164,12 +147,17 @@ public class PostgresTLPBase extends TernaryLogicPartitioningOracleBase<Postgres
         List<PostgresJoin> joinStatements = new ArrayList<>();
         PostgresExpressionGenerator gen = new PostgresExpressionGenerator(globalState).setColumns(columns);
         joinTables.remove(fromTable);
+        boolean allColocated = true;
+        for (PostgresTable t : joinTables) {
+            boolean colocated = (distributedTables.get(fromTable) == distributedTables.get(t));
+            allColocated = allColocated && colocated;
+        }
         while (!joinTables.isEmpty()) {
             PostgresTable table = Randomly.fromList(joinTables);
             joinTables.remove(table);
             PostgresExpression joinClause = null;
             PostgresExpression equiJoinClause = null;
-            if (colocated) {
+            if (allColocated) {
                 PostgresExpression leftExpr = new PostgresColumnValue(fromTable.getDistributionColumn(), null);
                 PostgresExpression rightExpr = new PostgresColumnValue(table.getDistributionColumn(), null);
                 equiJoinClause = new PostgresBinaryComparisonOperation(leftExpr, rightExpr,
@@ -184,7 +172,7 @@ public class PostgresTLPBase extends TernaryLogicPartitioningOracleBase<Postgres
                 equiJoinClause = new PostgresBinaryComparisonOperation
                     (leftExpr, rightExpr, PostgresBinaryComparisonOperation.PostgresBinaryComparisonOperator.EQUALS);
             }
-            if (Randomly.getBooleanWithSmallProbability()) {
+            if (allColocated && Randomly.getBooleanWithSmallProbability()) {
                 joinClause = new PostgresBinaryLogicalOperation(equiJoinClause,
                 gen.generateExpression(PostgresDataType.BOOLEAN), 
                 PostgresBinaryLogicalOperation.BinaryLogicalOperator.AND);
@@ -192,7 +180,7 @@ public class PostgresTLPBase extends TernaryLogicPartitioningOracleBase<Postgres
                 joinClause = equiJoinClause;
             }
             PostgresJoinType options = Randomly.fromOptions(PostgresJoinType.INNER, PostgresJoinType.LEFT, PostgresJoinType.RIGHT, PostgresJoinType.FULL);
-            if (!colocated) {
+            if (!allColocated) {
                 options = PostgresJoinType.INNER;
             }
             PostgresJoin j = new PostgresJoin(table, joinClause, options);
