@@ -200,7 +200,7 @@ public class PostgresTLPBase extends TernaryLogicPartitioningOracleBase<Postgres
         return new PostgresJoin(CTE, joinClause, options);
     }
 
-    public void whereJoin() {
+    public void whereJoin(PostgresSelect select) {
         List<PostgresJoin> joins = select.getJoinClauses();
         if (!joins.isEmpty()) {
             List<PostgresExpression> fromList = new ArrayList<>(select.getFromList());
@@ -211,6 +211,9 @@ public class PostgresTLPBase extends TernaryLogicPartitioningOracleBase<Postgres
             List<PostgresJoin> joinToWhere = Randomly.nonEmptySubset(joins);
             for (PostgresJoin j : joinToWhere) {
                 joins.remove(j);
+                if (j.getType() == PostgresJoinType.CROSS) {
+                    continue;
+                }
                 if (j.joinCTE()) {
                     fromList.add(j.getCTE());
                 } else {
@@ -223,27 +226,6 @@ public class PostgresTLPBase extends TernaryLogicPartitioningOracleBase<Postgres
             select.setFromList(fromList);
             select.setWhereClause(whereClause);
         }
-/* 
-        select.setJoinClauses(new ArrayList<>());
-        List<PostgresTable> tables = targetTables.getTables();
-        List<PostgresExpression> tableList = tables.stream().map(t -> new PostgresFromTable(t, Randomly.getBoolean()))
-            .collect(Collectors.toList());
-        select.setFromList(tableList);
-        if (tables.size() > 1) {
-            PostgresExpression whereClause = select.getWhereClause();
-            if (whereClause == null) {
-                whereClause = new BooleanConstant(true);
-            }
-            PostgresExpression leftExpr = new PostgresColumnValue(tables.get(0).getDistributionColumn(), null);
-            for (int i = 1; i < tables.size(); i++) {
-                PostgresExpression rightExpr = new PostgresColumnValue(tables.get(i).getDistributionColumn(), null);
-                PostgresExpression equiWhereClause = new PostgresBinaryComparisonOperation(leftExpr, rightExpr,
-                    PostgresBinaryComparisonOperation.PostgresBinaryComparisonOperator.EQUALS);
-                whereClause = new PostgresBinaryLogicalOperation(equiWhereClause, 
-                    whereClause, PostgresBinaryLogicalOperation.BinaryLogicalOperator.AND);
-            } */
-            // select.setWhereClause(whereClause);
-        // }
     }
 
     public static PostgresCTE createCTE(PostgresGlobalState globalState, PostgresTables tables) {

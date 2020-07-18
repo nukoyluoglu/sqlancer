@@ -101,7 +101,8 @@ public final class PostgresCommon {
         // Citus restrictions on SELECT queries
         errors.add("complex joins are only supported when all distributed tables are co-located and joined on their distribution columns");
         errors.add("complex joins are only supported when all distributed tables are joined on their distribution columns with equal operator");
-        // errors.add("cannot perform distributed planning on this query");
+        errors.add("cannot perform distributed planning on this query");
+        // errors.add("the query contains a join that requires repartitioning");
         // SQLancer error
         errors.add("non-integer constant in GROUP BY");
         // SQLancer error

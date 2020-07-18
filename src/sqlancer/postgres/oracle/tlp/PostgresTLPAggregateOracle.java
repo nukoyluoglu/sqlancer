@@ -46,6 +46,7 @@ public class PostgresTLPAggregateOracle extends PostgresTLPBase implements TestO
         // don't use immutable functions in SELECT queries
         state.setAllowedFunctionTypes(Arrays.asList('i'));
         super.check();
+        boolean whereJoin = Randomly.getBooleanWithRatherLowProbability();
         PostgresAggregateFunction aggregateFunction = Randomly.fromOptions(PostgresAggregateFunction.MAX,
                 PostgresAggregateFunction.MIN, PostgresAggregateFunction.SUM, PostgresAggregateFunction.BIT_AND,
                 PostgresAggregateFunction.BIT_OR, PostgresAggregateFunction.BOOL_AND, PostgresAggregateFunction.BOOL_OR,
@@ -61,10 +62,15 @@ public class PostgresTLPAggregateOracle extends PostgresTLPBase implements TestO
         if (Randomly.getBooleanWithRatherLowProbability()) {
             select.setOrderByExpressions(gen.generateOrderBy());
         }
+        List<PostgresJoin> oldJoins = new ArrayList<>(select.getJoinClauses());
+        List<PostgresExpression> oldFromList = new ArrayList<>(select.getFromList());
+        if (whereJoin) {
+            super.whereJoin(select);
+        }
         state.setDefaultAllowedFunctionTypes();
         originalQuery = PostgresVisitor.asString(select);
         firstResult = getAggregateResult(originalQuery);
-        metamorphicQuery = createMetamorphicUnionQuery(select, aggregate, select.getFromList());
+        metamorphicQuery = createMetamorphicUnionQuery(select, aggregate, select.getFromList(), whereJoin, oldJoins, oldFromList);
         secondResult = getAggregateResult(metamorphicQuery);
 
         String queryFormatString = "-- %s;\n-- result: %s";
@@ -75,7 +81,7 @@ public class PostgresTLPAggregateOracle extends PostgresTLPBase implements TestO
                 || (firstResult != null && secondResult == null)
                 || firstResult != null && (!firstResult.contentEquals(secondResult)
                         && !ComparatorHelper.isEqualDouble(firstResult, secondResult))) {
-            if (secondResult.contains("Inf")) {
+            if (secondResult != null && secondResult.contains("Inf")) {
                 throw new IgnoreMeException(); // FIXME: average computation
             }
             String assertionMessage = String.format("the results mismatch!\n%s\n%s", firstQueryString,
@@ -86,16 +92,26 @@ public class PostgresTLPAggregateOracle extends PostgresTLPBase implements TestO
     }
 
     private String createMetamorphicUnionQuery(PostgresSelect select, PostgresAggregate aggregate,
-            List<PostgresExpression> from) {
+            List<PostgresExpression> from, boolean whereJoin, List<PostgresJoin> oldJoins, List<PostgresExpression> oldFromList) {
         String metamorphicQuery;
         // TODO: set where clause with distribution column
         PostgresExpression whereClause = gen.generateExpression(PostgresDataType.BOOLEAN);
         PostgresExpression negatedClause = new PostgresPrefixOperation(whereClause, PrefixOperator.NOT);
         PostgresExpression notNullClause = new PostgresPostfixOperation(whereClause, PostfixOperator.IS_NULL);
         List<PostgresExpression> mappedAggregate = mapped(aggregate);
-        PostgresSelect leftSelect = getSelect(mappedAggregate, from, whereClause, select.getJoinClauses());
-        PostgresSelect middleSelect = getSelect(mappedAggregate, from, negatedClause, select.getJoinClauses());
-        PostgresSelect rightSelect = getSelect(mappedAggregate, from, notNullClause, select.getJoinClauses());
+        select.setJoinClauses(oldJoins);
+        from = oldFromList;
+        oldJoins = new ArrayList<>(oldJoins);
+        oldFromList = new ArrayList<>(oldFromList);
+        PostgresSelect leftSelect = getSelect(mappedAggregate, from, whereClause, select.getJoinClauses(), whereJoin);
+        select.setJoinClauses(oldJoins);
+        from = oldFromList;
+        oldJoins = new ArrayList<>(oldJoins);
+        oldFromList = new ArrayList<>(oldFromList);
+        PostgresSelect middleSelect = getSelect(mappedAggregate, from, negatedClause, select.getJoinClauses(), whereJoin);
+        select.setJoinClauses(oldJoins);
+        from = oldFromList;
+        PostgresSelect rightSelect = getSelect(mappedAggregate, from, notNullClause, select.getJoinClauses(), whereJoin);
         metamorphicQuery = "SELECT " + getOuterAggregateFunction(aggregate).toString() + " FROM (";
         metamorphicQuery += PostgresVisitor.asString(leftSelect) + " UNION ALL "
                 + PostgresVisitor.asString(middleSelect) + " UNION ALL " + PostgresVisitor.asString(rightSelect);
@@ -179,12 +195,15 @@ public class PostgresTLPAggregateOracle extends PostgresTLPBase implements TestO
     }
 
     private PostgresSelect getSelect(List<PostgresExpression> aggregates, List<PostgresExpression> from,
-            PostgresExpression whereClause, List<PostgresJoin> joinList) {
+            PostgresExpression whereClause, List<PostgresJoin> joinList, boolean whereJoin) {
         PostgresSelect leftSelect = new PostgresSelect();
         leftSelect.setFetchColumns(aggregates);
         leftSelect.setFromList(from);
         leftSelect.setWhereClause(whereClause);
         leftSelect.setJoinClauses(joinList);
+        if (whereJoin) {
+            super.whereJoin(leftSelect);
+        }
         if (Randomly.getBooleanWithSmallProbability()) {
             leftSelect.setGroupByExpressions(gen.generateExpressions(Randomly.smallNumber() + 1));
         }

@@ -29,8 +29,8 @@ public class PostgresTLPHavingOracle extends PostgresTLPBase {
         if (Randomly.getBoolean()) {
             select.setWhereClause(gen.generateExpression(PostgresDataType.BOOLEAN)); 
         }
-        if (Randomly.getBooleanWithRatherLowProbability()) {
-            super.whereJoin();
+        if (Randomly.getBoolean()) {
+            super.whereJoin(select);
         }
         if (select.getFromList().size() == 0) {
             select.setFromList(select.getFromList());
