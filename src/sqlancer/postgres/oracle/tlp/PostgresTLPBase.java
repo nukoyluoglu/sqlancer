@@ -208,7 +208,7 @@ public class PostgresTLPBase extends TernaryLogicPartitioningOracleBase<Postgres
             if (whereClause == null) {
                 whereClause = new BooleanConstant(true);
             }
-            List<PostgresJoin> joinToWhere = Randomly.nonEmptySubset(joins);
+            List<PostgresJoin> joinToWhere = new ArrayList<>(joins);
             for (PostgresJoin j : joinToWhere) {
                 joins.remove(j);
                 if (j.getType() == PostgresJoinType.CROSS) {
