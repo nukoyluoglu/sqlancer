@@ -163,6 +163,10 @@ public class PostgresTLPBase extends TernaryLogicPartitioningOracleBase<Postgres
                 equiJoinClause = new PostgresBinaryComparisonOperation(leftExpr, rightExpr,
                     PostgresBinaryComparisonOperation.PostgresBinaryComparisonOperator.EQUALS);
             } else {
+                // check if repartition joins are allowed
+                if (!globalState.getRepartition()) {
+                    continue;
+                }
                 PostgresExpression leftExpr = new PostgresColumnValue(fromTable.getDistributionColumn(), null);
                 List<PostgresColumn> candidateRightColumns = table.getColumns().stream().filter(c -> c.getType().equals(fromTable.getDistributionColumn().getType())).collect(Collectors.toList());
                 if (candidateRightColumns.isEmpty()) {

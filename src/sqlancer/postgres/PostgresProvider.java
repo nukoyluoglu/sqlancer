@@ -339,7 +339,7 @@ public final class PostgresProvider extends ProviderAdapter<PostgresGlobalState,
         se.executeStatements();
         globalState.executeStatement(new QueryAdapter("COMMIT", true));
         globalState.executeStatement(new QueryAdapter("SET SESSION statement_timeout = 5000;\n"));
-        if (globalState.getDmbsSpecificOptions().repartition) {
+        if (globalState.getRepartition()) {
             // allow repartition joins
             globalState.executeStatement(new QueryAdapter("SET citus.enable_repartition_joins to ON;\n", errors));
         }
@@ -367,6 +367,7 @@ public final class PostgresProvider extends ProviderAdapter<PostgresGlobalState,
             String password = globalState.getOptions().getPassword();
             int coordinatorPort = globalState.getDmbsSpecificOptions().coordinatorPort;
             String entryDatabaseName = globalState.getDmbsSpecificOptions().entryDatabaseName;
+            globalState.setRepartition(globalState.getDmbsSpecificOptions().repartition);
             String urlCoordinatorInitDB = "jdbc:postgresql://localhost:" + coordinatorPort + "/" + entryDatabaseName;
             globalState.getState().statements.add(new QueryAdapter("psql -p " + coordinatorPort));
             globalState.getState().statements.add(new QueryAdapter("\\c " + entryDatabaseName));

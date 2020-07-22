@@ -19,6 +19,7 @@ public class PostgresGlobalState extends GlobalState<PostgresOptions, PostgresSc
     private List<String> opClasses;
     private HashMap<String, Character> functionsAndTypes = new HashMap<>();;
     private List<Character> allowedFunctionTypes = Arrays.asList('s', 'v', 'i');
+    private boolean repartition;
 
     @Override
     public void setConnection(Connection con) {
@@ -115,6 +116,14 @@ public class PostgresGlobalState extends GlobalState<PostgresOptions, PostgresSc
 
     public List<Character> getAllowedFunctionTypes() {
         return this.allowedFunctionTypes;
+    }
+
+    public void setRepartition(boolean repartition) {
+        this.repartition = repartition;
+    }
+
+    public boolean getRepartition() {
+        return repartition;
     }
 
 }

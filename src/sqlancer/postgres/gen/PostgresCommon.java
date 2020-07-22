@@ -73,7 +73,8 @@ public final class PostgresCommon {
         errors.add("non-IMMUTABLE functions are not allowed in the RETURNING clause");
         errors.add("functions used in UPDATE queries on distributed tables must not be VOLATILE");
         errors.add("STABLE functions used in UPDATE queries cannot be called with column references");
-        errors.add("failed to evaluate partition key in insert");
+        // should be fixed now
+        // errors.add("failed to evaluate partition key in insert");
         errors.add("functions used in the WHERE clause of modification queries on distributed tables must not be VOLATILE");
         errors.add("cannot perform an INSERT with NULL in the partition column");
         errors.add("cannot execute ADD CONSTRAINT command with other subcommands");
